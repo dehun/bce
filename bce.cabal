@@ -15,6 +15,11 @@ build-type:          Simple
 extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
+library
+    build-depends: base
+    exposed-modules: BlockChain
+                                         
+
 executable bce
   main-is:             Main.hs
   -- other-modules:       
