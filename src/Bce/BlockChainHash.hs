@@ -31,7 +31,10 @@ instance Hashable TxOutput where
     hash (TxOutput amount pubkey) = hash $ mconcat [hashBs $ hash amount, hashBs $ hash pubkey ] 
 
 instance Hashable TxInput where
-    hash input = undefined --  TODO: implement ,me
+    hash (TxInput outputRef) = hash outputRef
+
+instance Hashable TxOutputRef where
+    hash (TxOutputRef txId outputIdx) = hash $ mconcat [hashBs txId, int64ToBs outputIdx]
 
 instance Hashable [Transaction] where
     hash txs = hash $ mconcat $ map (hashBs . hash) txs
