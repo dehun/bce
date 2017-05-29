@@ -4,7 +4,7 @@ import Data.Maybe
 import qualified Data.List as DList
 import Bce.Crypto
 import Bce.Hash
-import GHC.Int(Int64)     
+import GHC.Int(Int64, Int32)     
 
 type TimeStamp = Int64
 
@@ -14,7 +14,7 @@ data TxOutput = TxOutput { outputAmount :: Int64
 
 data TxOutputRef = TxOutputRef {
       outputRefTxId :: Hash
-    , outputRefOutputIdx :: Int64
+    , outputRefOutputIdx :: Int32
       } deriving (Show, Eq)
 
 
