@@ -1,9 +1,9 @@
-module BlockChain where
+module Bce.BlockChain where
 
 import Data.Maybe
 import qualified Data.List as DList
-import Crypto
-import Hash    
+import Bce.Crypto
+import Bce.Hash    
 
 type TimeStamp = Int
 

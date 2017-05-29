@@ -13,9 +13,9 @@ extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 library
-    hs-source-dirs: src/bce
+    hs-source-dirs: src
     build-depends: base
-    exposed-modules: BlockChain
+    exposed-modules: Bce.BlockChain
     default-language:    Haskell2010    
                                          
 

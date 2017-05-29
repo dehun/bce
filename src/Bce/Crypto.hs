@@ -1,3 +1,3 @@
-module Crypto where
+module Bce.Crypto where
 
 type PubKey = String
