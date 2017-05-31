@@ -19,6 +19,10 @@ library
                  , bytestring
                  , base16-bytestring
     exposed-modules: Bce.BlockChain
+                   , Bce.Hash
+                   , Bce.BlockChainHash
+                   , Bce.BlockChainVerification
+                   , Bce.Crypto
     default-language:    Haskell2010    
                                          
 
@@ -31,6 +35,17 @@ executable bce
                          bce
     hs-source-dirs: src/bceapp
     default-language:    Haskell2010
+
+executable bce-miner
+    main-is:             Miner.hs
+  -- other-modules:       
+  -- other-extensions:    
+    build-depends:       Cabal >= 1.24.0.0
+                       , base >=4.9 && <4.10
+                       , time
+                       , bce
+    hs-source-dirs: src/bceapp
+    default-language:    Haskell2010    
 
 
 Test-Suite test-hunit-example
