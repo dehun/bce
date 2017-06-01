@@ -15,13 +15,18 @@ cabal-version:       >=1.10
 library
     hs-source-dirs: src
     build-depends: base
-                 , cryptohash-sha256
-                 , bytestring
                  , base16-bytestring
+                 , bytestring
+                 , cryptohash-sha256
+                 , time >= 1.6.0.1
+                 , bitstring
+                 
     exposed-modules: Bce.BlockChain
                    , Bce.Hash
                    , Bce.BlockChainHash
                    , Bce.BlockChainVerification
+                   , Bce.Difficulity
+                   , Bce.InitialBlock                   
                    , Bce.Crypto
     default-language:    Haskell2010    
                                          
@@ -32,7 +37,8 @@ executable bce
   -- other-extensions:    
     build-depends:       Cabal >= 1.24.0.0,
                          base >=4.9 && <4.10,
-                         bce
+                         bce,
+                         time >= 1.6.0.1
     hs-source-dirs: src/bceapp
     default-language:    Haskell2010
 
@@ -42,8 +48,9 @@ executable bce-miner
   -- other-extensions:    
     build-depends:       Cabal >= 1.24.0.0
                        , base >=4.9 && <4.10
-                       , time
                        , bce
+                       , time
+                       , time >= 1.6.0.1
     hs-source-dirs: src/bceapp
     default-language:    Haskell2010    
 
@@ -53,8 +60,9 @@ Test-Suite test-hunit-example
     hs-source-dirs:   tests
     Main-is:          Tests.hs
     Build-Depends:  base >=4.9 && <4.10
-                    , tasty
-                    , tasty-hunit
-                    , bce
+                  , bce
+                  , tasty
+                  , tasty-hunit
+                  , time >= 1.6.0.1
     default-language:    Haskell2010                  
                          
