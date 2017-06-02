@@ -37,6 +37,7 @@ growChain rnd oldchain = do
   then do
     putStrLn $ show nextTime ++ " got chain of length " ++ show (length (blockChainBlocks newChain))
                  ++ "; next difficulity is " ++ (show $ nextDifficulity newChain)
+                 ++ "; growth speed is " ++ (show $ growthSpeed newChain)
     return newChain
   else growChain (rnd + 1) (BlockChain blocks)
 
