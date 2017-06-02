@@ -4,7 +4,7 @@ import Data.Maybe
 import qualified Data.List as DList
 import Bce.Crypto
 import Bce.Hash
-import GHC.Int(Int64, Int32)     
+import GHC.Int(Int64, Int32)
 
 type TimeStamp = Int64
 
@@ -33,6 +33,7 @@ data BlockHeader = BlockHeader {
     , bhPrevBlockHeaderHash :: Hash
     , bhNonce :: Int64
     , bhWallClockTime :: TimeStamp
+    , bhDifficulity :: Int32
     } deriving (Show, Eq)
 
 data Block = Block { blockHeader:: BlockHeader

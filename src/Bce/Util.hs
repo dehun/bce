@@ -13,3 +13,6 @@ average xs = sum xs / (fromIntegral $ length xs)
 
 median :: (Ord a, Num a) => [a] -> a
 median xs = sort xs !! (length xs `div` 2)
+
+zipPairs :: [a] -> [(a, a)]
+zipPairs xs = zip (init xs) (tail xs)

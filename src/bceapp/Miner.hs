@@ -16,14 +16,15 @@ import Data.Time.Clock.POSIX
 import Control.Monad    
 
 
-randomBlock :: Int -> Int -> Block -> Block
-randomBlock time rnd prevBlock =
+randomBlock :: Int -> Int -> Block -> Difficulity -> Block
+randomBlock time rnd prevBlock difficulity =
     let transactions = [CoinbaseTransaction [TxOutput 0 ""]]
         header = BlockHeader
                  (hash transactions)
                  (hash $ blockHeader prevBlock)
                  (fromIntegral rnd)
                  (fromIntegral time)
+                 (fromIntegral difficulity)
     in Block header transactions
 
     
@@ -31,11 +32,12 @@ growChain :: Int -> BlockChain -> IO BlockChain
 growChain rnd oldchain = do
   let (BlockChain blocks) = oldchain
   nextTime <- fmap round getPOSIXTime
-  let nextblock = randomBlock nextTime rnd (head blocks)
+  let nextblock = randomBlock nextTime rnd (head blocks) (nextDifficulity oldchain)
   let newChain = BlockChain (nextblock : blocks)
   if verifyBlockChain newChain
   then do
     putStrLn $ show nextTime ++ " got chain of length " ++ show (length (blockChainBlocks newChain))
+                 ++ "; used rnd"
                  ++ "; block difficulity is " ++ (show (blockDifficulity (head $ blockChainBlocks newChain)))
                  ++ "; next difficulity is " ++ (show $ nextDifficulity newChain)
                  ++ "; growth speed is " ++ (show $ growthSpeed newChain)

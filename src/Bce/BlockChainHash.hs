@@ -21,8 +21,9 @@ int32ToBs :: Int32 -> BS.ByteString
 int32ToBs x = BSL.toStrict $ BSB.toLazyByteString $ BSB.int32BE x              
 
 instance Hashable BlockHeader where
-    hash (BlockHeader txHash prevBlockHash nonce wallclock) =
-        hash (mconcat [hashBs txHash, hashBs prevBlockHash, int64ToBs nonce, int64ToBs wallclock])
+    hash (BlockHeader txHash prevBlockHash nonce wallclock difficulity) =
+        hash (mconcat [hashBs txHash, hashBs prevBlockHash,
+                       int64ToBs nonce, int64ToBs wallclock, int32ToBs difficulity])
 
 instance Hashable Transaction where
     hash (CoinbaseTransaction outputs) = hash $ mconcat $ map (\o -> hashBs $ hash  o) outputs

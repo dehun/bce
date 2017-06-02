@@ -39,7 +39,16 @@ verifyBlockChain (BlockChain blocks) =
       transactionsReferencesCorrect block = True -- TODO: check                                     
       difficulitiesCorrect =
           let ts = init $ zip blocks (tail $ tails blocks)
-          in all (\(b, t) -> blockDifficulity b >= nextDifficulity (BlockChain t)) ts
+              difficulitiesStampedCorrectly =
+                  all (\(b, t) -> bhDifficulity (blockHeader b)
+                                  == fromIntegral (nextDifficulity $ BlockChain t)) ts
+              difficulitiesOfBlocksMatchBlocks =
+                  all (\b -> blockDifficulity b
+                             >= fromIntegral (bhDifficulity $ blockHeader b))
+                          (init blocks) -- ignore first block as its difficulity does not mater
+          in and [ difficulitiesOfBlocksMatchBlocks
+                 , difficulitiesStampedCorrectly
+                 ]
 
 
 
