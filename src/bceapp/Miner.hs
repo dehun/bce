@@ -36,6 +36,7 @@ growChain rnd oldchain = do
   if verifyBlockChain newChain
   then do
     putStrLn $ show nextTime ++ " got chain of length " ++ show (length (blockChainBlocks newChain))
+                 ++ "; block difficulity is " ++ (show (blockDifficulity (head $ blockChainBlocks newChain)))
                  ++ "; next difficulity is " ++ (show $ nextDifficulity newChain)
                  ++ "; growth speed is " ++ (show $ growthSpeed newChain)
     return newChain

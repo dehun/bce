@@ -21,7 +21,7 @@ defaultDifficulity = 1
 minDifficulity = defaultDifficulity                     
 maxDifficulity = 127                     
 
-difficulityRecalculationBlocks = 3  :: Int
+difficulityRecalculationBlocks = 2  :: Int
 
 blockDifficulity :: Block -> LeadingZeros
 blockDifficulity b =
@@ -34,7 +34,7 @@ growthSpeed (BlockChain blocks) =
         recalculationBlocks = take difficulityRecalculationBlocks blocks
         (newest, oldest) = (head recalculationBlocks, last recalculationBlocks)
         blockTimestamp = fromIntegral . bhWallClockTime . blockHeader
-        in  (blockTimestamp newest - blockTimestamp oldest) / (fromIntegral difficulityRecalculationBlocks)
+    in  (blockTimestamp newest - blockTimestamp oldest) / (fromIntegral difficulityRecalculationBlocks)
     
 
 nextDifficulity :: BlockChain -> LeadingZeros
@@ -46,7 +46,7 @@ nextDifficulity bc
             recalculationBlocks = take difficulityRecalculationBlocks $ blockChainBlocks bc 
             avg = blockDifficulity newest
             next = case compare (growthSpeed bc) secondsPerBlock of
-                     LT -> avg - 1
+                     LT -> avg + 1
                      EQ -> avg
-                     GT -> avg + 1
+                     GT -> avg - 1
         in min (max next minDifficulity) maxDifficulity
