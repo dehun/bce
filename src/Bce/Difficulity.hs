@@ -14,7 +14,7 @@ type Difficulity = LeadingZeros
 type SecondsPerBlock = Double
 
 secondsPerBlock :: SecondsPerBlock
-secondsPerBlock = 5.0
+secondsPerBlock = 60.0
 
 defaultDifficulity :: Difficulity
 defaultDifficulity = 1
@@ -22,7 +22,7 @@ defaultDifficulity = 1
 minDifficulity = defaultDifficulity                     
 maxDifficulity = 127                     
 
-difficulityRecalculationBlocks = 10  :: Int
+difficulityRecalculationBlocks = 25  :: Int
 
 blockDifficulity :: Block -> Difficulity
 blockDifficulity b =

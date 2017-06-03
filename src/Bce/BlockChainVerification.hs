@@ -45,7 +45,7 @@ verifyBlockChain (BlockChain blocks) =
               difficulitiesOfBlocksMatchBlocks =
                   all (\b -> blockDifficulity b
                              >= fromIntegral (bhDifficulity $ blockHeader b))
-                          (init blocks) -- ignore first block as its difficulity does not mater
+                          blocks
           in and [ difficulitiesOfBlocksMatchBlocks
                  , difficulitiesStampedCorrectly
                  ]
