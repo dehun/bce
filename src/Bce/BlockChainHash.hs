@@ -7,7 +7,7 @@ import Bce.BlockChain
 import qualified Crypto.Hash.SHA256 as Sha
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BSL    
-import qualified Data.ByteString.Builder as BSB    
+import qualified Data.ByteString.Lazy.Builder as BSB    
 import qualified Data.ByteString.Base16 as B16
 import GHC.Int(Int64, Int32)    
 
