@@ -6,7 +6,6 @@ import Bce.BlockChain
 import Bce.BlockChainHash    
 import Data.List
 import Bce.Util    
-import qualified Data.BitString as BS
 
 type LeadingZeros = Int
 type Difficulity = LeadingZeros    
@@ -24,9 +23,10 @@ maxDifficulity = 127
 
 difficulityRecalculationBlocks = 25  :: Int
 
+
 blockDifficulity :: Block -> Difficulity
 blockDifficulity b =
-    length $ takeWhile (==0) $ BS.to01List $ BS.bitString $ hashBs $ hash $ blockHeader b
+    length $ takeWhile (==0) $ to01List $ hashBs $ hash $ blockHeader b
 
            
 growthSpeed :: BlockChain -> SecondsPerBlock
