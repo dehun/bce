@@ -16,27 +16,32 @@ import qualified Data.ByteString.Lazy as BSL
 import qualified Network.Socket.ByteString as SBS    
 import qualified Network.Socket as Sock
 import qualified Data.Binary as Bin
-import qualified Data.Binary.Get as BinGet        
+import qualified Data.Binary.Get as BinGet
+import qualified Data.Set as Set    
 
 
 data P2pConfig = P2pConfig {
       p2pConfigBindAddress :: PeerAddress
-    , p2pPeersMemoryLimit :: Int32
+    , p2pConfigConnectedPeersLimit :: Int
+    , p2pConfigPeersLimit :: Int
+    , p2pConfigReconnectTimeout :: Int
       } deriving (Show)
 
 
 data PeerAddress = PeerAddress {
       peerIp :: String
     , peerPort :: Int32
-      } deriving (Show, Eq, Generic)
+      } deriving (Show, Eq, Generic, Ord)
 instance Binary PeerAddress                                          
 
 
 data P2p = P2p {
       p2pConfig :: P2pConfig
-    , p2pPeers :: TVar [PeerAddress]
+    , p2pPeers :: TVar (Set.Set PeerAddress)
+    , p2pConnectedPeers :: TVar (Set.Set PeerAddress)
+    , p2pConnectingPeers :: TVar (Set.Set PeerAddress)                           
     , p2pRecvChan :: TChan PeerEvent
-    , p2pSendChan :: TChan BS.ByteString
+    , p2pSendChan :: TChan PeerSend
       } 
 
 
@@ -57,6 +62,9 @@ data PeerSend = PeerSend { sendMsg :: P2pMessage, sendDestination :: Maybe PeerA
 
 sockAddrToPeerAddr :: Sock.SockAddr -> PeerAddress
 sockAddrToPeerAddr = undefined
+
+peerAddressToSockAddr :: PeerAddress -> Sock.SockAddr
+peerAddressToSockAddr = undefined
 
 msgDecoder :: BinGet.Get P2pMessage
 msgDecoder = do
@@ -95,10 +103,10 @@ clientSendLoop :: Sock.Socket -> Sock.SockAddr -> IO ()
 clientSendLoop sock addr =
     return ()
                     
-handleClient :: Sock.Socket -> Sock.SockAddr -> TChan PeerEvent -> TChan PeerSend -> IO ()
-handleClient sock addr recvChan sendChan = do
+handlePeer :: Sock.Socket -> Sock.SockAddr -> TChan PeerEvent -> TChan PeerSend -> IO ()
+handlePeer sock addr recvChan sendChan = do
   forkIO (State.evalStateT (clientRecvLoop sock addr recvChan)
-                   (P2pClientState $  BinGet.runGetIncremental msgDecoder))
+                   (P2pClientState $ BinGet.runGetIncremental msgDecoder))
   forkIO $ clientSendLoop sock addr
   return ()
 
@@ -106,7 +114,7 @@ serverMainLoop :: Sock.Socket -> TChan PeerEvent -> TChan PeerSend -> IO ()
 serverMainLoop sock  recvChan sendChan =
     forever $ do
       (conn, addr) <- Sock.accept sock
-      handleClient conn addr recvChan sendChan
+      handlePeer conn addr recvChan sendChan
       return ()
 
 startServerListener :: P2pConfig -> TChan PeerEvent -> TChan PeerSend -> IO ()
@@ -116,11 +124,46 @@ startServerListener config recvChan sendChan  = do
   Sock.listen sock 2
   forkIO $ serverMainLoop sock recvChan sendChan
   return ()
+
+secondsToMicroseconds :: Int -> Int
+secondsToMicroseconds x = x * 1000000
+
+reconnectPeer :: P2p -> PeerAddress -> IO ()
+reconnectPeer p2p peerAddress = do
+      sock <- Sock.socket Sock.AF_INET Sock.Stream 0
+      Sock.connect sock $ peerAddressToSockAddr peerAddress
+      let removeFromConnecting = do
+            oldConnecting <- readTVar $ p2pConnectingPeers p2p
+            writeTVar (p2pConnectingPeers p2p) (Set.delete peerAddress oldConnecting)
+      success <- Sock.isConnected sock
+      if success 
+      then do
+        atomically $ do
+             oldConnected <- readTVar (p2pConnectedPeers p2p)
+             writeTVar (p2pConnectedPeers p2p) (Set.insert peerAddress oldConnected)
+             removeFromConnecting
+        forkIO $ handlePeer sock (peerAddressToSockAddr peerAddress) (p2pRecvChan p2p) (p2pSendChan p2p)
+        return ()
+      else atomically removeFromConnecting
+      
+      
+
+reconnectorLoop :: P2p -> IO ()
+reconnectorLoop p2p = do
+    threadDelay (p2pConfigReconnectTimeout $ p2pConfig p2p)
+    toConnect <- atomically $ do
+                        all <- readTVar $ p2pPeers p2p
+                        connected <- readTVar $ p2pConnectedPeers p2p
+                        return $ (Set.\\) all connected
+    forM_ toConnect (\p -> forkIO $ reconnectPeer p2p p)
+    reconnectorLoop p2p
   
 start :: [PeerAddress] -> P2pConfig -> IO P2p
 start seeds config = do
-  p2p <- P2p config <$> newTVarIO seeds <*> newTChanIO <*> newTChanIO
+  p2p <- P2p config <$> newTVarIO (Set.fromList seeds) <*> newTVarIO Set.empty
+         <*> newTVarIO Set.empty <*> newTChanIO <*> newTChanIO
   startServerListener config (p2pRecvChan p2p) (p2pSendChan p2p)
+  forkIO $ reconnectorLoop p2p 
   return p2p
 
   
