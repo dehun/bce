@@ -130,21 +130,34 @@ secondsToMicroseconds x = x * 1000000
 
 reconnectPeer :: P2p -> PeerAddress -> IO ()
 reconnectPeer p2p peerAddress = do
-      sock <- Sock.socket Sock.AF_INET Sock.Stream 0
-      Sock.connect sock $ peerAddressToSockAddr peerAddress
-      let removeFromConnecting = do
-            oldConnecting <- readTVar $ p2pConnectingPeers p2p
-            writeTVar (p2pConnectingPeers p2p) (Set.delete peerAddress oldConnecting)
-      success <- Sock.isConnected sock
-      if success 
-      then do
-        atomically $ do
-             oldConnected <- readTVar (p2pConnectedPeers p2p)
-             writeTVar (p2pConnectedPeers p2p) (Set.insert peerAddress oldConnected)
-             removeFromConnecting
-        forkIO $ handlePeer sock (peerAddressToSockAddr peerAddress) (p2pRecvChan p2p) (p2pSendChan p2p)
-        return ()
-      else atomically removeFromConnecting
+      proceed <- atomically $ do
+                   isConnecting <- Set.member peerAddress <$> readTVar (p2pConnectingPeers p2p)
+                   isConnected <- Set.member peerAddress <$> readTVar (p2pConnectedPeers p2p)
+                   let r  = or [isConnecting, isConnected]
+                   if  r 
+                   then return False
+                   else do
+                     writeTVar (p2pConnectingPeers p2p) <$>
+                                   (Set.insert peerAddress <$> readTVar (p2pConnectingPeers p2p))
+                     return True
+      if not proceed
+      then return()
+      else do
+        sock <- Sock.socket Sock.AF_INET Sock.Stream 0
+        Sock.connect sock $ peerAddressToSockAddr peerAddress
+        let removeFromConnecting = do
+                                  oldConnecting <- readTVar $ p2pConnectingPeers p2p
+                                  writeTVar (p2pConnectingPeers p2p) (Set.delete peerAddress oldConnecting)
+        success <- Sock.isConnected sock
+        if success 
+        then do
+          atomically $ do
+               oldConnected <- readTVar (p2pConnectedPeers p2p)
+               writeTVar (p2pConnectedPeers p2p) (Set.insert peerAddress oldConnected)
+               removeFromConnecting
+          forkIO $ handlePeer sock (peerAddressToSockAddr peerAddress) (p2pRecvChan p2p) (p2pSendChan p2p)
+          return ()
+        else atomically removeFromConnecting
       
       
 
