@@ -16,11 +16,15 @@ library
     hs-source-dirs: src
     build-depends: base
                  , base16-bytestring
+                 , binary >= 0.8.3.0
                  , bytestring
                  , cryptohash-sha256
+                 , mtl >= 2.2.1
+                 , network
                  , random
                  , stm
                  , time >= 1.6.0.1
+                 , transformers >= 0.5.2.0
                  , word8
                  
     exposed-modules: Bce.BlockChain
@@ -42,9 +46,13 @@ executable bce
     build-depends:       Cabal >= 1.24.0.0,
                          base,
                          bce,
+                         binary >= 0.8.3.0,
+                         mtl >= 2.2.1,
+                         network,
                          random,
                          stm,
                          time >= 1.6.0.1,
+                         transformers >= 0.5.2.0,
                          word8
     hs-source-dirs: src/bceapp
     default-language:    Haskell2010
@@ -56,10 +64,14 @@ executable bce-miner
     build-depends:       Cabal >= 1.24.0.0
                        , base
                        , bce
+                       , binary >= 0.8.3.0
+                       , mtl >= 2.2.1
+                       , network
                        , random
                        , stm
                        , time
                        , time >= 1.6.0.1
+                       , transformers >= 0.5.2.0
                        , word8
     hs-source-dirs: src/bceapp
     default-language:    Haskell2010    
@@ -71,11 +83,15 @@ Test-Suite test-hunit-example
     Main-is:          Tests.hs
     Build-Depends:  base
                   , bce
+                  , binary >= 0.8.3.0
+                  , mtl >= 2.2.1
+                  , network
                   , random
                   , stm
                   , tasty
                   , tasty-hunit
                   , time >= 1.6.0.1
+                  , transformers >= 0.5.2.0
                   , word8
     default-language:    Haskell2010                  
                          
