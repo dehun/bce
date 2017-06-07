@@ -275,24 +275,3 @@ broadcastPayload p2p payload = broadcast p2p $ P2pMessagePayload payload
 
 sendPayload :: P2p -> PeerAddress -> BS.ByteString -> IO ()
 sendPayload p2p peer payload = send p2p peer $ P2pMessagePayload payload
-
-    
--- let peerAddr = sockAddrToPeerAddr addr
-      -- atomically $ do
-      --           writeTVar (p2pPeers p2p) <$> (Set.insert peerAddr <$> readTVar (p2pPeers p2p))
-      --           writeTVar (p2pConnectedPeers p2p) <$> (Set.insert peerAddr <$> readTVar (p2pConnectedPeers p2p))             
-
-
--- p2pMessagesReactor :: P2p -> IO ()
--- p2pMessagesReactor p2p =
---     let
---         chan = atomically $ dupTChan $ p2pRecvChan p2p
---         loop = do
---           event <- atomically $ readTChan chan
---           case event of
---             PeerDisconnected peer -> pure ()
---             PeerMessage peer msg ->
---                 case msg of
---                   P2pMessageHello
---     in loop
-  

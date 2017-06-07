@@ -7,7 +7,7 @@ import Control.Concurrent
 
 main :: IO ()
 main = do
-  let p2pSeeds1 = [P2p.PeerAddress "(127,0,0,1)" 3666]
+  let p2pSeeds1 = [P2p.PeerAddress "(127,0,0,1)" 3666, P2p.PeerAddress "(127,0,0,1)" 3668]
   let p2pConfig1 = P2p.P2pConfig (P2p.PeerAddress "(127,0,0,1)" 3667) 5 5
   p2p <- P2p.start  p2pSeeds1 p2pConfig1
   let p2pSeeds2 = [P2p.PeerAddress "(127,0,0,1)" 3667]
