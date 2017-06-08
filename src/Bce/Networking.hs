@@ -16,7 +16,8 @@ import qualified Data.Binary.Put as BinPut
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import Control.Applicative
-import Data.Monoid    
+import Data.Monoid
+import Debug.Trace
 import Control.Concurrent    
 import Control.Concurrent.STM
 
@@ -49,7 +50,7 @@ encodeMessage :: NetworkMessage -> BS.ByteString
 encodeMessage msg = BSL.toStrict $ BinPut.runPut $ Bin.put msg
 
 decodeMessage :: BS.ByteString -> NetworkMessage
-decodeMessage bs = BinGet.runGet Bin.get (BSL.fromStrict bs)
+decodeMessage bs = BinGet.runGet Bin.get (trace "decoding message" $ BSL.fromStrict bs)
 
 --
 
@@ -59,6 +60,7 @@ handlePeerMessage net peer msg = do
     putStrLn $ "got message " ++ show msg
     case msg of
       Brag braggedLen -> do
+               putStrLn $ "saw bragger with length!" ++ show braggedLen
                (dbLen, topBlock) <- atomically $ do
                                       (,) <$> (Db.getChainLength db)
                                               <*> (Db.getTopBlock db)
@@ -89,7 +91,8 @@ networkListener net = do
             case msg of
               P2p.PeerDisconnected peer -> do
                         return ()
-              P2p.PeerMessage peer bs ->
+              P2p.PeerMessage peer bs -> do
+                  putStrLn $ "got message of length " ++ (show (BS.length bs))
                   handlePeerMessage net peer $ decodeMessage bs
             loop
       loop
@@ -112,7 +115,7 @@ start p2pConfig seeds db  = do
     return network
 
 broadcast :: Network -> NetworkMessage -> IO ()
-broadcast net msg = P2p.broadcastPayload (networkP2p net) (encodeMessage msg)
+broadcast net msg = P2p.broadcastPayload (networkP2p net) (traceShowId $ encodeMessage msg)
 
 send :: Network -> PeerAddress -> NetworkMessage -> IO ()
-send net peer msg = P2p.sendPayload  (networkP2p net) peer (encodeMessage msg)                    
+send net peer msg = P2p.sendPayload  (networkP2p net) peer (traceShowId $ encodeMessage msg)                    

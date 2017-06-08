@@ -65,6 +65,7 @@ data P2pClientState = P2pClientState {
 clientStateUpdateDecoder :: BinGet.Decoder P2pMessage -> P2pClientState -> P2pClientState
 clientStateUpdateDecoder newDecoder p2pState  =
     P2pClientState newDecoder $ clientStatePeer p2pState
+
 clientStateUpdatePeer :: PeerAddress -> P2pClientState -> P2pClientState
 clientStateUpdatePeer newPeer p2pState  =
     P2pClientState (clientStateDecoder p2pState) $ Just newPeer
@@ -73,7 +74,7 @@ clientStateUpdatePeer newPeer p2pState  =
 data PeerEvent = PeerDisconnected PeerAddress
                  | PeerMessage PeerAddress BS.ByteString  deriving (Show, Eq)
 
-data PeerSend = PeerSend { sendMsg :: BS.ByteString, sendDestination :: Maybe PeerAddress } deriving (Show, Eq)
+data PeerSend = PeerSend { sendMsg :: P2pMessage, sendDestination :: Maybe PeerAddress } deriving (Show, Eq)
 
 msgDecoder :: BinGet.Get P2pMessage
 msgDecoder = do
@@ -87,7 +88,7 @@ encodeMsg msg =
         payloadSize = BinPut.runPut (BinPut.putWord64le $ fromIntegral (BSL.length payload))
     in BSL.toStrict $ mappend payloadSize payload                                          
 
-pollMessageFromClienBuffer :: BS.ByteString ->  State.StateT P2pClientState IO (Maybe P2pMessage)
+pollMessageFromClienBuffer :: BS.ByteString ->  State.StateT P2pClientState IO (Maybe (P2pMessage, BS.ByteString))
 pollMessageFromClienBuffer bs = do
     decoder <- clientStateDecoder <$> State.get
     olds <- State.get
@@ -95,13 +96,51 @@ pollMessageFromClienBuffer bs = do
     case nextDecoder of
       BinGet.Fail _ _ _ -> error "msg decoding failed"
       BinGet.Partial _ -> do
+          liftIO $ putStrLn "partial"                       
           State.put (clientStateUpdateDecoder nextDecoder olds)
           return Nothing
       BinGet.Done leftover _ msg -> do
           liftIO $ putStrLn "chunked"
-          let leftoverDecoder = BinGet.runGetIncremental msgDecoder
-          State.put (clientStateUpdateDecoder (BinGet.pushChunk leftoverDecoder leftover) olds)
-          return $ Just msg
+          let newDecoder = BinGet.runGetIncremental msgDecoder
+          State.put $ clientStateUpdateDecoder newDecoder olds
+          return $ Just (msg, leftover)
+
+pollMessagesFromClientBufer :: BS.ByteString -> State.StateT P2pClientState IO [P2pMessage]
+pollMessagesFromClientBufer s' =
+    let continue ns msgs = do
+          res <- pollMessageFromClienBuffer ns
+          case res of
+            Just (msg, leftover) ->
+                continue leftover (msg:msgs)
+            Nothing -> return $ reverse msgs
+    in continue s' []
+
+handlePeerMessage :: Sock.Socket -> P2p -> P2pMessage -> State.StateT P2pClientState IO ()
+handlePeerMessage sock p2p msg = do
+  liftIO $ putStrLn $ "got msg " ++ show msg
+  case msg of
+    P2pMessageHello peer -> do
+                      liftIO $ putStrLn $ "hello from " ++ show peer
+                      liftIO $ atomically $ do
+                              writeTVar (p2pPeers p2p)
+                                            <$> (Set.insert peer <$> readTVar (p2pPeers p2p))
+                              writeTVar (p2pConnectedPeers p2p)
+                                            <$> (Set.insert peer <$> readTVar (p2pConnectedPeers p2p))
+                      oldState <- State.get
+                      liftIO $ forkIO $ clientSendLoop sock peer p2p
+                      State.put $ clientStateUpdatePeer peer oldState
+                      return ()
+    P2pMessageAnounce peers -> do
+--             liftIO $ putStrLn $ "new peers " ++ show peers
+             liftIO $ atomically $ do
+                                   writeTVar (p2pPeers p2p) <$> (Set.union peers <$> (readTVar $ p2pPeers p2p))
+                                   return ()
+    P2pMessagePayload userMsg -> do
+             liftIO $ putStrLn $ "new payload " 
+             -- TODO: check do we have bloody peer
+             peer <- fromJust <$> clientStatePeer <$> State.get
+             liftIO $ atomically $ writeTChan (p2pRecvChan p2p)
+                                 (PeerMessage peer userMsg)
 
 clientRecvLoop :: Sock.Socket -> Sock.SockAddr -> P2p -> State.StateT P2pClientState IO ()
 clientRecvLoop sock addr p2p =
@@ -110,31 +149,8 @@ clientRecvLoop sock addr p2p =
       s <- liftIO $ SBS.recv sock 1024
       if BS.length s > 0
       then do
-          msgOpt <- pollMessageFromClienBuffer s
-          case msgOpt of
-            Nothing -> clientRecvLoop sock addr p2p
-            Just msg ->
-                case msg of
-                  P2pMessageHello peer -> do
-                           liftIO $ putStrLn $ "hello from " ++ show peer
-                           liftIO $ atomically $ do
-                             writeTVar (p2pPeers p2p)
-                                           <$> (Set.insert peer <$> readTVar (p2pPeers p2p))
-                             writeTVar (p2pConnectedPeers p2p)
-                                           <$> (Set.insert peer <$> readTVar (p2pConnectedPeers p2p))
-                           oldState <- State.get
-                           liftIO $ forkIO $ clientSendLoop sock peer p2p
-                           State.put $ clientStateUpdatePeer peer oldState
-                           return ()
-                  P2pMessageAnounce peers -> do
-                           liftIO $ atomically $ do
-                                  writeTVar (p2pPeers p2p) <$> (Set.union peers <$> (readTVar $ p2pPeers p2p))
-                                  return ()
-                  P2pMessagePayload userMsg -> do
-                        -- TODO: check do we have bloody peer
-                        peer <- fromJust <$> clientStatePeer <$> State.get
-                        liftIO $ atomically $ writeTChan (p2pRecvChan p2p)
-                                   (PeerMessage peer userMsg)
+          msgs <- pollMessagesFromClientBufer s
+          forM_ msgs (\m -> handlePeerMessage sock p2p m)
           clientRecvLoop sock addr p2p
       else do
         peer <- clientStatePeer <$> State.get
@@ -152,8 +168,7 @@ clientSendLoop sock peerAddr p2p = do
     chan <- atomically $ dupTChan $ p2pSendChan p2p
     let loop = do
           snd <- atomically $ readTChan chan
-          putStrLn $ "sending msg" ++ show snd
-          let encodedMsg = encodeMsg (P2pMessagePayload $ sendMsg snd) 
+          let encodedMsg = encodeMsg $ sendMsg snd
           case sendDestination snd of
             Nothing -> SBS.send sock encodedMsg
             Just dst -> if dst == peerAddr
@@ -165,14 +180,17 @@ clientSendLoop sock peerAddr p2p = do
                     
 handlePeer :: Sock.Socket -> Sock.SockAddr -> P2p -> IO ()
 handlePeer sock addr p2p = do
-  forkIO (State.evalStateT (clientRecvLoop sock addr p2p)
-                   (P2pClientState (BinGet.runGetIncremental msgDecoder) Nothing))
+  putStrLn $ "got peer from addr"  ++ show addr
+  forkIO $ do
+    State.evalStateT (clientRecvLoop sock addr p2p)
+             (P2pClientState (BinGet.runGetIncremental msgDecoder) Nothing)
   return ()
 
 serverMainLoop :: Sock.Socket -> P2p -> IO ()
 serverMainLoop sock p2p =
     forever $ do
       (conn, addr) <- Sock.accept sock
+      SBS.send conn $ encodeMsg $ P2pMessageHello $ p2pConfigBindAddress $ p2pConfig p2p
       handlePeer conn addr p2p
       return ()
 
@@ -250,7 +268,7 @@ announcerLoop p2p =
           (peersToAnnounce, toPeers) <- atomically $ do
                                         (,) <$> (readTVar $ p2pPeers p2p)
                                                  <*> (readTVar $ p2pConnectedPeers p2p)
-          putStrLn $ "announcing peers" ++ show peersToAnnounce ++ " to " ++ show toPeers
+--          putStrLn $ "announcing peers" ++ show peersToAnnounce ++ " to " ++ show toPeers
           broadcast p2p $ P2pMessageAnounce peersToAnnounce
           loop
     in loop
@@ -266,11 +284,11 @@ start seeds config = do
 
 broadcast :: P2p -> P2pMessage -> IO ()
 broadcast p2p msg = do
-    atomically $ writeTChan (p2pSendChan p2p) (PeerSend (encodeMsg msg) Nothing)
+    atomically $ writeTChan (p2pSendChan p2p) (PeerSend msg Nothing)
 
 send :: P2p -> PeerAddress -> P2pMessage -> IO ()
 send p2p peer msg =
-        atomically $ writeTChan (p2pSendChan p2p) (PeerSend (encodeMsg msg) $ Just peer)
+        atomically $ writeTChan (p2pSendChan p2p) (PeerSend msg  $ Just peer)
 
 broadcastPayload :: P2p -> BS.ByteString -> IO ()
 broadcastPayload p2p payload = broadcast p2p $ P2pMessagePayload payload
