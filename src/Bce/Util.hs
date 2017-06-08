@@ -24,3 +24,9 @@ to01List xs = concatMap to01 $ BS.unpack xs
 
 zipPairs :: [a] -> [(a, a)]
 zipPairs xs = zip (init xs) (tail xs)
+
+
+discardResult :: IO a -> IO ()
+discardResult fx = do
+  fx
+  return ()

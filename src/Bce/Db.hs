@@ -9,6 +9,7 @@ import Bce.BlockChainHash
 
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM
+import Data.List    
 
 data Db = Db {
       dbBlockChain :: TVar BlockChain
@@ -27,6 +28,10 @@ getTopBlock db =
      do
       chain <- readTVar $ dbBlockChain db
       return $ head $ blockChainBlocks chain
+
+blocksFromHash :: Db -> Hash -> STM (Maybe [Block])
+blocksFromHash db hash = undefined
+    
 
 getChainLength :: Db -> STM Int
 getChainLength db = (length . blockChainBlocks) <$> readTVar (dbBlockChain db)
@@ -55,10 +60,15 @@ growChain db newBlock =
       else return False
 
 
-regrowChain :: Db -> Hash -> [Block] -> IO Bool
-regrowChain db prevBlockHash blocks = undefined
+regrowChain :: Db -> [Block] -> STM Bool
+regrowChain db blocks = undefined
 
-pushTransaction :: Db -> Transaction -> IO Bool
+getBlock :: Db -> Hash -> STM (Maybe Block)
+getBlock = undefined
+
+-- transactions                        
+
+pushTransaction :: Db -> Transaction -> STM Bool
 pushTransaction = undefined
 
 getTransactions :: Db -> STM [Transaction]
