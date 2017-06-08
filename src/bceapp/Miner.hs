@@ -73,7 +73,7 @@ coinbaseTransaction txs =
 
 growChain :: Db.Db -> IO ()
 growChain db = do
-  blocksChan <- atomically $ Db.subscribeToDbBlocks db
+--  blocksChan <- atomically $ Db.subscribeToDbBlocks db
 --  txChan <- Db.subscribeToDbTransactions db
   forever $ do
     time <- round <$> getPOSIXTime

@@ -14,14 +14,13 @@ import Data.List
 data Db = Db {
       dbBlockChain :: TVar BlockChain
     , dbTransactions :: TVar [Transaction]
-    , dbBlocksChan :: TChan Block
     }
 
 
 initialBlockChain = BlockChain [ initialBlock ]
 
 newDb :: IO Db        
-newDb = Db <$> newTVarIO initialBlockChain <*> newTVarIO [] <*> newTChanIO
+newDb = Db <$> newTVarIO initialBlockChain <*> newTVarIO [] 
 
 getTopBlock :: Db -> STM Block
 getTopBlock db =
@@ -42,9 +41,9 @@ getNextDifficulity db =
       chain <- readTVar $ dbBlockChain db
       return $ nextDifficulity chain
 
-subscribeToDbBlocks :: Db -> STM (TChan Block)
-subscribeToDbBlocks db =
-     dupTChan $ dbBlocksChan db
+-- subscribeToDbBlocks :: Db -> STM (TChan Block)
+-- subscribeToDbBlocks db =
+--      dupTChan $ dbBlocksChan db
 
 
 growChain :: Db -> Block -> STM Bool
@@ -55,7 +54,7 @@ growChain db newBlock =
       if verifyBlockChain newChain
       then do
         writeTVar (dbBlockChain db) newChain
-        writeTChan (dbBlocksChan db) newBlock
+--        writeTChan (dbBlocksChan db) newBlock
         return True
       else return False
 
