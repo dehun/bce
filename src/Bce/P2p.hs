@@ -77,9 +77,15 @@ data PeerSend = PeerSend { sendMsg :: BS.ByteString, sendDestination :: Maybe Pe
 
 msgDecoder :: BinGet.Get P2pMessage
 msgDecoder = do
-  msgLen <- BinGet.getInt64le
+  msgLen <- BinGet.getWord64le
   msgBs <- BinGet.getLazyByteString (fromIntegral msgLen) 
-  return $ BinGet.runGet Bin.get msgBs :: BinGet.Get P2pMessage  
+  return $ BinGet.runGet Bin.get msgBs :: BinGet.Get P2pMessage
+
+encodeMsg :: P2pMessage -> BS.ByteString
+encodeMsg msg =
+    let payload = BinPut.runPut $ Bin.put msg
+        payloadSize = BinPut.runPut (BinPut.putWord64le $ fromIntegral (BSL.length payload))
+    in BSL.toStrict $ mappend payloadSize payload                                          
 
 pollMessageFromClienBuffer :: BS.ByteString ->  State.StateT P2pClientState IO (Maybe P2pMessage)
 pollMessageFromClienBuffer bs = do
@@ -92,6 +98,7 @@ pollMessageFromClienBuffer bs = do
           State.put (clientStateUpdateDecoder nextDecoder olds)
           return Nothing
       BinGet.Done leftover _ msg -> do
+          liftIO $ putStrLn "chunked"
           let leftoverDecoder = BinGet.runGetIncremental msgDecoder
           State.put (clientStateUpdateDecoder (BinGet.pushChunk leftoverDecoder leftover) olds)
           return $ Just msg
@@ -140,17 +147,12 @@ clientRecvLoop sock addr p2p =
           Nothing -> pure ()
         return ()
 
-encodeMsg :: P2pMessage -> BS.ByteString
-encodeMsg msg =
-    let payload = BinPut.runPut $ Bin.put msg
-        payloadSize = BinPut.runPut (BinPut.putWord64le $ fromIntegral (BSL.length payload))
-    in BSL.toStrict $ mappend payloadSize payload
-
 clientSendLoop :: Sock.Socket -> PeerAddress ->  P2p -> IO ()
 clientSendLoop sock peerAddr p2p = do
     chan <- atomically $ dupTChan $ p2pSendChan p2p
     let loop = do
           snd <- atomically $ readTChan chan
+          putStrLn $ "sending msg" ++ show snd
           let encodedMsg = encodeMsg (P2pMessagePayload $ sendMsg snd) 
           case sendDestination snd of
             Nothing -> SBS.send sock encodedMsg

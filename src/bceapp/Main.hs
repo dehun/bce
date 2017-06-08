@@ -11,13 +11,13 @@ import Control.Monad
 import Control.Concurrent
 import System.Environment
 
-
+-- ./dist/build/bce/bce "(127,0,0,1)" 3555 "(127,0,0,1)" 3777 
 main :: IO ()
 main = do
   db <- Db.newDb  
   [bindAddress, bindPort, seedAddress, seedPort] <- getArgs
   let seed = P2p.PeerAddress seedAddress (read seedPort)
-  let p2pConfig = P2p.P2pConfig (P2p.PeerAddress bindAddress (read bindPort)) 15 15
+  let p2pConfig = P2p.P2pConfig (P2p.PeerAddress bindAddress (read bindPort)) 5 5
   net <- Networking.start p2pConfig [seed] db
   putStrLn "started networking, starting up miner"
   Miner.growChain db

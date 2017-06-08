@@ -54,9 +54,10 @@ decodeMessage bs = BinGet.runGet Bin.get (BSL.fromStrict bs)
 --
 
 handlePeerMessage :: Network -> PeerAddress -> NetworkMessage -> IO ()
-handlePeerMessage net peer msg =
+handlePeerMessage net peer msg = do
     let db = networkDb net
-    in case msg of
+    putStrLn $ "got message " ++ show msg
+    case msg of
       Brag braggedLen -> do
                (dbLen, topBlock) <- atomically $ do
                                       (,) <$> (Db.getChainLength db)
@@ -98,6 +99,7 @@ bragger net =
     let loop = do
           threadDelay (secondsToMicroseconds $ 5)
           length <- atomically $ Db.getChainLength (networkDb net)
+          putStrLn $ "bragging with length of " ++ show length
           broadcast net $ Brag length
     in loop
               
