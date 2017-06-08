@@ -11,6 +11,7 @@ import Control.Concurrent
 import Control.Concurrent.STM    
 import Control.Monad
 import Control.Monad.Trans
+import Control.Applicative   
 import Data.Either
 import Data.Maybe    
 import qualified Control.Monad.Trans.State as State
