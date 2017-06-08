@@ -15,7 +15,8 @@ import qualified Data.Binary.Get as BinGet
 import qualified Data.Binary.Put as BinPut
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
-import Control.Applicative    
+import Control.Applicative
+import Data.Monoid    
 import Control.Concurrent    
 import Control.Concurrent.STM
 
