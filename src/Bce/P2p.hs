@@ -2,6 +2,8 @@
 
 module Bce.P2p where
 
+import Bce.Util
+    
 import Data.Binary
 import GHC.Generics (Generic)
 import GHC.Int (Int32)
@@ -181,9 +183,6 @@ startServerListener config p2p  = do
   Sock.listen sock 2
   forkIO $ serverMainLoop sock p2p
   return ()
-
-secondsToMicroseconds :: Int -> Int
-secondsToMicroseconds x = x * 1000000
 
 peerAddressToSockAddr :: PeerAddress -> Sock.SockAddr
 peerAddressToSockAddr (PeerAddress host port) =

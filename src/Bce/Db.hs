@@ -28,10 +28,6 @@ getTopBlock db =
       chain <- readTVar $ dbBlockChain db
       return $ head $ blockChainBlocks chain
 
-blocksFromHash :: Db -> Hash -> STM (Maybe [Block])
-blocksFromHash db hash = undefined
-    
-
 getChainLength :: Db -> STM Int
 getChainLength db = (length . blockChainBlocks) <$> readTVar (dbBlockChain db)
 
@@ -40,11 +36,6 @@ getNextDifficulity db =
      do
       chain <- readTVar $ dbBlockChain db
       return $ nextDifficulity chain
-
--- subscribeToDbBlocks :: Db -> STM (TChan Block)
--- subscribeToDbBlocks db =
---      dupTChan $ dbBlocksChan db
-
 
 growChain :: Db -> Block -> STM Bool
 growChain db newBlock = 
@@ -58,12 +49,31 @@ growChain db newBlock =
         return True
       else return False
 
+blocksFromHash :: Db -> Hash -> STM (Maybe [Block])
+blocksFromHash db needle = do
+  blocks <- blockChainBlocks <$> (readTVar $ dbBlockChain db)
+  case takeWhile (\b -> hash b /= needle) blocks of
+    [] -> return Nothing
+    xs -> return $ Just xs
+           
 
 regrowChain :: Db -> [Block] -> STM Bool
-regrowChain db blocks = undefined
-
+regrowChain db blocks = do
+    oldBlocks <- blockChainBlocks <$> (readTVar $ dbBlockChain db)
+    let startBlock = last blocks
+    let startBlockPrevHash = bhPrevBlockHeaderHash $ blockHeader $ startBlock
+    let newBlocksPrefix = dropWhile (\b -> startBlockPrevHash /= hash b) oldBlocks
+    let newBlockChain = BlockChain $ blocks ++ newBlocksPrefix
+    if and [verifyBlockChain newBlockChain,  length (blockChainBlocks newBlockChain) > length oldBlocks]
+    then do
+        writeTVar (dbBlockChain db) newBlockChain
+        return True
+    else return False
+    
 getBlock :: Db -> Hash -> STM (Maybe Block)
-getBlock = undefined
+getBlock db needle = do
+  blocks <- blockChainBlocks <$> readTVar (dbBlockChain db)
+  return $ find (\b -> needle == hash b) blocks
 
 -- transactions                        
 

@@ -15,6 +15,7 @@ import qualified Data.Binary.Get as BinGet
 import qualified Data.Binary.Put as BinPut
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
+import Control.Concurrent    
 import Control.Concurrent.STM
 
     
@@ -89,11 +90,21 @@ networkListener net = do
                   handlePeerMessage net peer $ decodeMessage bs
             loop
       loop
+
+bragger :: Network -> IO ()
+bragger net =
+    let loop = do
+          threadDelay (secondsToMicroseconds $ 5)
+          length <- atomically $ Db.getChainLength (networkDb net)
+          broadcast net $ Brag length
+    in loop
               
 
 start :: P2p.P2pConfig -> [P2p.PeerAddress] -> Db.Db -> IO Network 
 start p2pConfig seeds db  = do
     network <- Network <$> (P2p.start seeds p2pConfig) <*> pure db
+    forkIO $ networkListener network
+    forkIO $ bragger network           
     return network
 
 broadcast :: Network -> NetworkMessage -> IO ()

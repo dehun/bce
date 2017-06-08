@@ -30,3 +30,6 @@ discardResult :: IO a -> IO ()
 discardResult fx = do
   fx
   return ()
+
+secondsToMicroseconds :: Int -> Int
+secondsToMicroseconds x = x * 1000000         
