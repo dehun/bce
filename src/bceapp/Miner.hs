@@ -20,36 +20,6 @@ import Control.Concurrent
 import Control.Concurrent.STM    
 
 
--- randomBlock :: Int -> Int -> Block -> Difficulity -> Block
--- randomBlock time rnd prevBlock difficulity =
---     let transactions = [CoinbaseTransaction [TxOutput 0 ""]]
---         header = BlockHeader
---                  (hash transactions)
---                  (hash $ blockHeader prevBlock)
---                  (fromIntegral rnd)
---                  (fromIntegral time)
---                  (fromIntegral difficulity)
---     in Block header transactions
-
-    
--- growChain :: Int -> BlockChain -> IO BlockChain
--- growChain rnd oldchain = do
---   let (BlockChain blocks) = oldchain
---   nextTime <- fmap round getPOSIXTime
---   let nextblock = randomBlock nextTime rnd (head blocks) (nextDifficulity oldchain)
---   let newChain = BlockChain (nextblock : blocks)
---   if verifyBlockChain newChain
---   then do
---     putStrLn $ show nextTime ++ " got chain of length " ++ show (length (blockChainBlocks newChain))
---                  ++ "; used rnd"
---                  ++ "; block difficulity is " ++ (show (blockDifficulity (head $ blockChainBlocks newChain)))
---                  ++ "; next difficulity is " ++ (show $ nextDifficulity newChain)
---                  ++ "; growth speed is " ++ (show $ growthSpeed newChain)
---     return newChain
---   else growChain (rnd + 1) (BlockChain blocks)
-
-type BlockGenerator = (Block -> [Transaction] -> Difficulity -> IO Block)
-
 tryGenerateBlock :: Int -> Int64 -> Block -> [Transaction] -> Difficulity -> Maybe Block
 tryGenerateBlock time rnd prevBlock txs target = do
   let header = BlockHeader
@@ -63,9 +33,6 @@ tryGenerateBlock time rnd prevBlock txs target = do
   then Just candidate
   else Nothing
     
-
--- generateBlock :: Int -> Int -> Difficulity -> [Transaction] -> Difficulity -> EitherT BlockGenerator IO Block 
--- generateBlock rnd txs =
 
 coinbaseTransaction :: [Transaction] -> Transaction
 coinbaseTransaction txs =
