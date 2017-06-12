@@ -268,7 +268,7 @@ announcerLoop p2p =
           (peersToAnnounce, toPeers) <- atomically $ do
                                         (,) <$> (readTVar $ p2pPeers p2p)
                                                  <*> (readTVar $ p2pConnectedPeers p2p)
-          putStrLn $ "announcing peers" ++ show peersToAnnounce ++ " to " ++ show toPeers
+--          putStrLn $ "announcing peers" ++ show peersToAnnounce ++ " to " ++ show toPeers
           broadcast p2p $ P2pMessageAnounce peersToAnnounce
           loop
     in loop
