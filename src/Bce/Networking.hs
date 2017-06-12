@@ -60,7 +60,7 @@ handlePeerMessage net peer msg = do
 --    putStrLn $ "got message " ++ show msg
     case msg of
       Brag braggedLen -> do
-               putStrLn $ "saw bragger with length!" ++ show braggedLen
+--               putStrLn $ "saw bragger with length!" ++ show braggedLen
                (dbLen, topBlock) <- atomically $ do
                                       (,) <$> (Db.getChainLength db)
                                               <*> (Db.getTopBlock db)
@@ -102,7 +102,7 @@ bragger net =
     let loop = do
           threadDelay (secondsToMicroseconds $ 5)
           length <- atomically $ Db.getChainLength (networkDb net)
-          putStrLn $ "bragging with length of " ++ show length
+--          putStrLn $ "bragging with length of " ++ show length
           broadcast net $ Brag length
           loop
     in loop
@@ -116,7 +116,7 @@ start p2pConfig seeds db  = do
     return network
 
 broadcast :: Network -> NetworkMessage -> IO ()
-broadcast net msg = P2p.broadcastPayload (networkP2p net) (traceShowId $ encodeMessage msg)
+broadcast net msg = P2p.broadcastPayload (networkP2p net) (encodeMessage msg)
 
 send :: Network -> PeerAddress -> NetworkMessage -> IO ()
-send net peer msg = P2p.sendPayload  (networkP2p net) peer (traceShowId $ encodeMessage msg)                    
+send net peer msg = P2p.sendPayload  (networkP2p net) peer (encodeMessage msg)                    

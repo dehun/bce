@@ -58,8 +58,8 @@ growChain db = do
     then do
         (bcLength, nextDiff, topBlock) <-
             atomically $ ((,,) <$> Db.getChainLength db <*> Db.getNextDifficulity db <*> Db.getTopBlock db)
-        putStrLn $ show time ++ " got chain of length " ++ (show bcLength)
-                  ++ "; block difficulity is " ++ (show $ blockDifficulity topBlock)
-                  ++ "; next difficulity is " ++ (show nextDiff)
+        -- putStrLn $ show time ++ " got chain of length " ++ (show bcLength)
+        --           ++ "; block difficulity is " ++ (show $ blockDifficulity topBlock)
+        --           ++ "; next difficulity is " ++ (show nextDiff)
         return ()
     else return ()

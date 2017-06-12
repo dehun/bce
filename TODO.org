@@ -1,3 +1,4 @@
+** fix p2p
 ** implement network time sync
 ** set limit on amount of peers to connect
 ** set limit on amount of peers to store

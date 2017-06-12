@@ -13,7 +13,8 @@ import Control.Monad
 import Control.Monad.Trans
 import Control.Applicative   
 import Data.Either
-import Data.Maybe    
+import Data.Maybe
+import Debug.Trace    
 import qualified Control.Monad.Trans.State as State
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
@@ -120,19 +121,20 @@ handlePeerMessage sock p2p msg = do
     P2pMessageHello peer -> do
                       liftIO $ putStrLn $ "hello from " ++ show peer
                       liftIO $ atomically $ do
-                              writeTVar (p2pPeers p2p)
-                                            <$> (Set.insert peer <$> readTVar (p2pPeers p2p))
-                              writeTVar (p2pConnectedPeers p2p)
-                                            <$> (Set.insert peer <$> readTVar (p2pConnectedPeers p2p))
+                              oldPeers <- readTVar (p2pPeers p2p)
+                              writeTVar (p2pPeers p2p) (Set.insert peer oldPeers)
+                              oldConnectedPeers <- readTVar $ p2pConnectedPeers p2p
+                              writeTVar (p2pConnectedPeers p2p) $ Set.insert peer oldConnectedPeers
                       oldState <- State.get
                       liftIO $ forkIO $ clientSendLoop sock peer p2p
                       State.put $ clientStateUpdatePeer peer oldState
                       return ()
     P2pMessageAnounce peers -> do
---             liftIO $ putStrLn $ "new peers " ++ show peers
+             liftIO $ putStrLn $ "new peers " ++ show peers
              liftIO $ atomically $ do
-                                   writeTVar (p2pPeers p2p) <$> (Set.union peers <$> (readTVar $ p2pPeers p2p))
-                                   return ()
+                                 oldPeers <- readTVar $ p2pPeers p2p
+                                 writeTVar (p2pPeers p2p) $ Set.union peers oldPeers
+                                 return ()
     P2pMessagePayload userMsg -> do
 --             liftIO $ putStrLn $ "new payload " 
              -- TODO: check do we have bloody peer
@@ -155,8 +157,8 @@ clientRecvLoop sock addr p2p =
         case peer of
           Just peerAddress -> 
               liftIO $ atomically $ do
-                    writeTVar (p2pConnectedPeers p2p)
-                                  <$> (Set.delete peerAddress <$> readTVar (p2pConnectedPeers p2p))
+                    oldConnectedPeers <- readTVar (p2pConnectedPeers p2p)
+                    writeTVar (p2pConnectedPeers p2p) $ Set.delete peerAddress oldConnectedPeers 
                     writeTChan (p2pRecvChan p2p) (PeerDisconnected peerAddress)
           Nothing -> pure ()
         return ()
@@ -218,8 +220,8 @@ reconnectPeer p2p peerAddress = do
                    if  r 
                    then return False
                    else do
-                     writeTVar (p2pConnectingPeers p2p) <$>
-                                   (Set.insert peerAddress <$> readTVar (p2pConnectingPeers p2p))
+                     oldConnectingPeers <- readTVar (p2pConnectingPeers p2p)
+                     writeTVar (p2pConnectingPeers p2p) (Set.insert peerAddress oldConnectingPeers)
                      return True
       if not proceed
       then do
@@ -266,7 +268,7 @@ announcerLoop p2p =
           (peersToAnnounce, toPeers) <- atomically $ do
                                         (,) <$> (readTVar $ p2pPeers p2p)
                                                  <*> (readTVar $ p2pConnectedPeers p2p)
---          putStrLn $ "announcing peers" ++ show peersToAnnounce ++ " to " ++ show toPeers
+          putStrLn $ "announcing peers" ++ show peersToAnnounce ++ " to " ++ show toPeers
           broadcast p2p $ P2pMessageAnounce peersToAnnounce
           loop
     in loop
