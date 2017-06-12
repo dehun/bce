@@ -9,7 +9,8 @@ import Bce.BlockChainHash
 
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM
-import Data.List    
+import Data.List
+import Debug.Trace    
 
 data Db = Db {
       dbBlockChain :: TVar BlockChain
@@ -68,7 +69,7 @@ regrowChain db blocks = do
     then do
         writeTVar (dbBlockChain db) newBlockChain
         return True
-    else return False
+    else return (trace "invalid chain" False)
     
 getBlock :: Db -> Hash -> STM (Maybe Block)
 getBlock db needle = do

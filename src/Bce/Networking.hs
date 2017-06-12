@@ -50,14 +50,14 @@ encodeMessage :: NetworkMessage -> BS.ByteString
 encodeMessage msg = BSL.toStrict $ BinPut.runPut $ Bin.put msg
 
 decodeMessage :: BS.ByteString -> NetworkMessage
-decodeMessage bs = BinGet.runGet Bin.get (trace "decoding message" $ BSL.fromStrict bs)
+decodeMessage bs = BinGet.runGet Bin.get $ BSL.fromStrict bs
 
 --
 
 handlePeerMessage :: Network -> PeerAddress -> NetworkMessage -> IO ()
 handlePeerMessage net peer msg = do
     let db = networkDb net
-    putStrLn $ "got message " ++ show msg
+--    putStrLn $ "got message " ++ show msg
     case msg of
       Brag braggedLen -> do
                putStrLn $ "saw bragger with length!" ++ show braggedLen
@@ -92,7 +92,7 @@ networkListener net = do
               P2p.PeerDisconnected peer -> do
                         return ()
               P2p.PeerMessage peer bs -> do
-                  putStrLn $ "got message of length " ++ (show (BS.length bs))
+--                  putStrLn $ "got message of length " ++ (show (BS.length bs))
                   handlePeerMessage net peer $ decodeMessage bs
             loop
       loop
@@ -104,6 +104,7 @@ bragger net =
           length <- atomically $ Db.getChainLength (networkDb net)
           putStrLn $ "bragging with length of " ++ show length
           broadcast net $ Brag length
+          loop
     in loop
               
 

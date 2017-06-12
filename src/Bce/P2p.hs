@@ -96,11 +96,9 @@ pollMessageFromClienBuffer bs = do
     case nextDecoder of
       BinGet.Fail _ _ _ -> error "msg decoding failed"
       BinGet.Partial _ -> do
-          liftIO $ putStrLn "partial"                       
           State.put (clientStateUpdateDecoder nextDecoder olds)
           return Nothing
       BinGet.Done leftover _ msg -> do
-          liftIO $ putStrLn "chunked"
           let newDecoder = BinGet.runGetIncremental msgDecoder
           State.put $ clientStateUpdateDecoder newDecoder olds
           return $ Just (msg, leftover)
@@ -117,7 +115,7 @@ pollMessagesFromClientBufer s' =
 
 handlePeerMessage :: Sock.Socket -> P2p -> P2pMessage -> State.StateT P2pClientState IO ()
 handlePeerMessage sock p2p msg = do
-  liftIO $ putStrLn $ "got msg " ++ show msg
+--  liftIO $ putStrLn $ "got msg " ++ show msg
   case msg of
     P2pMessageHello peer -> do
                       liftIO $ putStrLn $ "hello from " ++ show peer
@@ -136,7 +134,7 @@ handlePeerMessage sock p2p msg = do
                                    writeTVar (p2pPeers p2p) <$> (Set.union peers <$> (readTVar $ p2pPeers p2p))
                                    return ()
     P2pMessagePayload userMsg -> do
-             liftIO $ putStrLn $ "new payload " 
+--             liftIO $ putStrLn $ "new payload " 
              -- TODO: check do we have bloody peer
              peer <- fromJust <$> clientStatePeer <$> State.get
              liftIO $ atomically $ writeTChan (p2pRecvChan p2p)
