@@ -1,0 +1,7 @@
+** set limit on amount of peers to connect
+** set limit on amount of peers to store
+** persistent file storage for blockchain
+** implement transactions
+** investigate possibility of hard fork due to imperfect p2p
+** select memory hard pow
+** optimize brag/ask - grow chain at N most, do not send whole blockchain because node is syncing from scratch
