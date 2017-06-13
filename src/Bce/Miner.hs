@@ -7,22 +7,20 @@ import Bce.BlockChainHash
 import Bce.BlockChainVerification
 import Bce.InitialBlock
 import Bce.Difficulity
+import Bce.TimeStamp    
 import qualified Bce.Db as Db
 
 import Data.Either    
 import Debug.Trace
 import GHC.Int (Int64)
 import System.Random    
-    
-import Data.Time.Clock
-import Data.Time.Clock.POSIX
 
 import Control.Monad
 import Control.Concurrent    
 import Control.Concurrent.STM    
 
 
-tryGenerateBlock :: Int -> Int64 -> Block -> [Transaction] -> Difficulity -> Maybe Block
+tryGenerateBlock :: TimeStamp -> Int64 -> Block -> [Transaction] -> Difficulity -> Maybe Block
 tryGenerateBlock time rnd prevBlock txs target = do
   let header = BlockHeader
                  (hash txs)
@@ -40,12 +38,12 @@ coinbaseTransaction :: [Transaction] -> Transaction
 coinbaseTransaction txs =
     CoinbaseTransaction [TxOutput 50 ""]
 
-growChain :: Db.Db -> IO ()
-growChain db = do
+growChain :: Db.Db -> Timer -> IO ()
+growChain db timer = do
 --  blocksChan <- atomically $ Db.subscribeToDbBlocks db
 --  txChan <- Db.subscribeToDbTransactions db
   forever $ do
-    time <- round <$> getPOSIXTime
+    time <- timer
     rnd <- randomIO :: IO Int64
     generated <- atomically $ do
       cbtx <- coinbaseTransaction <$> Db.getTransactions db
@@ -58,8 +56,8 @@ growChain db = do
     then do
         (bcLength, nextDiff, topBlock) <-
             atomically $ ((,,) <$> Db.getChainLength db <*> Db.getNextDifficulity db <*> Db.getTopBlock db)
-        -- putStrLn $ show time ++ " got chain of length " ++ (show bcLength)
-        --           ++ "; block difficulity is " ++ (show $ blockDifficulity topBlock)
-        --           ++ "; next difficulity is " ++ (show nextDiff)
+        putStrLn $ show time ++ " got chain of length " ++ (show bcLength)
+                  ++ "; block difficulity is " ++ (show $ blockDifficulity topBlock)
+                  ++ "; next difficulity is " ++ (show nextDiff)
         return ()
     else return ()

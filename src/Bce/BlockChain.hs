@@ -2,15 +2,16 @@
 
 module Bce.BlockChain where
 
-import Data.Maybe
-import qualified Data.List as DList
 import Bce.Crypto
 import Bce.Hash
+import Bce.TimeStamp
+
+import Data.Maybe
+import qualified Data.List as DList
 import GHC.Int(Int64, Int32)
-import GHC.Generics (Generic)    
+import GHC.Generics (Generic)
 
 
-type TimeStamp = Int64
 
 data TxOutput = TxOutput { outputAmount :: Int64
                          , outputPubKey :: PubKey

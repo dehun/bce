@@ -16,6 +16,8 @@ isCoinbaseTransaction (CoinbaseTransaction _) = True
 isCoinbaseTransaction _ = False                                                
 
 blockTimestamp = bhWallClockTime . blockHeader
+
+blocksForTimeAveraging = 10                 
                           
 verifyBlockChain :: BlockChain -> Bool
 verifyBlockChain (BlockChain blocks) =
@@ -30,7 +32,9 @@ verifyBlockChain (BlockChain blocks) =
       prevBlockHashesCorrect =
           all (\(nb, pb) -> hash (blockHeader pb) == (bhPrevBlockHeaderHash $ blockHeader nb)) blockPairs
       timestampsCorrect =
-          all (\(nb, pb) -> elem (comparing (bhWallClockTime . blockHeader) pb nb) [LT, EQ]) blockPairs
+          let groups = init $ init $ map (take blocksForTimeAveraging) (tails blocks)
+              predicate h r = blockTimestamp h > median (map blockTimestamp r)
+          in all (\(h:t) -> predicate h t) groups
       coinbasesCorrect =
           all (\b ->  onlyOne (\t -> isCoinbaseTransaction t) (blockTransactions b)) blocks -- TODO: reward should be checked
       transactionsCorrect = all (\b -> and [ transactionsHashCorrect b 

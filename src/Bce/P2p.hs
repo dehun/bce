@@ -3,6 +3,7 @@
 module Bce.P2p where
 
 import Bce.Util
+import Bce.TimeStamp
     
 import Data.Binary
 import GHC.Generics (Generic)
@@ -24,13 +25,15 @@ import qualified Data.Binary as Bin
 import qualified Data.Binary.Get as BinGet
 import qualified Data.Binary.Put as BinPut    
 import qualified Data.Set as Set
+import qualified Data.Map as Map    
 import qualified Control.Exception as Exception    
 
 
 data P2pConfig = P2pConfig {
       p2pConfigBindAddress :: PeerAddress
     , p2pConfigReconnectTimeout :: Int
-    , p2pConfigAnnounceTimeout :: Int                                   
+    , p2pConfigAnnounceTimeout :: Int
+    , p2pConfigTimerTimeout :: Int
       } deriving (Show)
 
 
@@ -48,6 +51,7 @@ data P2p = P2p {
     , p2pConnectingPeers :: TVar (Set.Set PeerAddress)                           
     , p2pRecvChan :: TChan PeerEvent
     , p2pSendChan :: TChan PeerSend
+    , p2pPeerTimes :: TVar (Map.Map PeerAddress TimeStamp)
       } 
 
 
@@ -55,6 +59,7 @@ data P2pMessage =
                 P2pMessageHello PeerAddress
                 | P2pMessageAnounce (Set.Set PeerAddress)
                 | P2pMessagePayload BS.ByteString
+                | P2pMessageTellTime TimeStamp
                 deriving (Show, Eq, Generic)
 instance Binary P2pMessage
 
@@ -141,6 +146,15 @@ handlePeerMessage sock p2p msg = do
              peer <- fromJust <$> clientStatePeer <$> State.get
              liftIO $ atomically $ writeTChan (p2pRecvChan p2p)
                                  (PeerMessage peer userMsg)
+
+    P2pMessageTellTime time -> do
+      peer <- fromJust <$> clientStatePeer <$> State.get      
+      liftIO $ atomically $ do
+        oldTimes <- readTVar $ p2pPeerTimes p2p
+        let newTimes = Map.insert peer time oldTimes
+        writeTVar (p2pPeerTimes p2p) newTimes
+        return ()
+        
 
 clientRecvLoop :: Sock.Socket -> Sock.SockAddr -> P2p -> State.StateT P2pClientState IO ()
 clientRecvLoop sock addr p2p =
@@ -262,21 +276,25 @@ reconnectorLoop p2p = do
     reconnectorLoop p2p
 
 announcerLoop :: P2p -> IO ()
-announcerLoop p2p =
-    let loop = do
-          threadDelay (secondsToMicroseconds $ p2pConfigAnnounceTimeout $ p2pConfig p2p)
-          (peersToAnnounce, toPeers) <- atomically $ do
-                                        (,) <$> (readTVar $ p2pPeers p2p)
-                                                 <*> (readTVar $ p2pConnectedPeers p2p)
---          putStrLn $ "announcing peers" ++ show peersToAnnounce ++ " to " ++ show toPeers
-          broadcast p2p $ P2pMessageAnounce peersToAnnounce
-          loop
-    in loop
+announcerLoop p2p = do
+  threadDelay (secondsToMicroseconds $ p2pConfigAnnounceTimeout $ p2pConfig p2p)
+  (peersToAnnounce, toPeers) <- atomically $ do
+                                  (,) <$> (readTVar $ p2pPeers p2p)
+                                          <*> (readTVar $ p2pConnectedPeers p2p)
+  broadcast p2p $ P2pMessageAnounce peersToAnnounce
+  announcerLoop p2p
+
+timerLoop :: P2p -> IO ()
+timerLoop p2p = do
+  threadDelay (secondsToMicroseconds $ p2pConfigTimerTimeout $ p2pConfig p2p)
+  broadcast p2p <$> P2pMessageTellTime <$> now
+  timerLoop p2p
+
 
 start :: [PeerAddress] -> P2pConfig -> IO P2p
 start seeds config = do
   p2p <- P2p config <$> newTVarIO (Set.fromList seeds) <*> newTVarIO Set.empty
-         <*> newTVarIO Set.empty <*> newTChanIO <*> newTChanIO
+         <*> newTVarIO Set.empty <*> newTChanIO <*> newTChanIO <*> newTVarIO Map.empty
   forkIO $ startServerListener config p2p
   forkIO $ reconnectorLoop p2p
   forkIO $ announcerLoop p2p
@@ -295,3 +313,9 @@ broadcastPayload p2p payload = broadcast p2p $ P2pMessagePayload payload
 
 sendPayload :: P2p -> PeerAddress -> BS.ByteString -> IO ()
 sendPayload p2p peer payload = send p2p peer $ P2pMessagePayload payload
+
+networkTime :: P2p -> IO TimeStamp
+networkTime p2p = do
+    times <- atomically $ readTVar $ p2pPeerTimes p2p
+    ourTime <- now
+    return $ median (ourTime: Map.elems times)

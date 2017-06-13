@@ -6,6 +6,10 @@ import Data.Time.Clock.POSIX
 
 type TimeStamp = Int64
 
-now :: IO Int64
+type Timer = IO TimeStamp    
+
+now :: Timer
 now = round <$> getPOSIXTime
+
+      
     

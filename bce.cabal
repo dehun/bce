@@ -39,7 +39,8 @@ library
                    , Bce.Db
                    , Bce.P2p
                    , Bce.Networking
-                   , Bce.Miner                 
+                   , Bce.Miner
+                   , Bce.TimeStamp       
     default-language:    Haskell2010    
                                          
 

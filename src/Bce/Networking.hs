@@ -7,7 +7,8 @@ import qualified Bce.Db as Db
 import qualified Bce.P2p as P2p
 import Bce.Hash
 import Bce.BlockChainHash
-import Bce.Util    
+import Bce.Util
+import Bce.TimeStamp    
 
 import qualified Data.Binary as Bin
 import GHC.Generics (Generic)
@@ -119,4 +120,7 @@ broadcast :: Network -> NetworkMessage -> IO ()
 broadcast net msg = P2p.broadcastPayload (networkP2p net) (encodeMessage msg)
 
 send :: Network -> PeerAddress -> NetworkMessage -> IO ()
-send net peer msg = P2p.sendPayload  (networkP2p net) peer (encodeMessage msg)                    
+send net peer msg = P2p.sendPayload  (networkP2p net) peer (encodeMessage msg)
+
+networkTime :: Network -> IO TimeStamp
+networkTime net = P2p.networkTime $ networkP2p net
