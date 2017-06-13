@@ -17,7 +17,7 @@ main = do
   db <- Db.newDb  
   [bindAddress, bindPort, seedAddress, seedPort] <- getArgs
   let seed = P2p.PeerAddress seedAddress (read seedPort)
-  let p2pConfig = P2p.P2pConfig (P2p.PeerAddress bindAddress (read bindPort)) 5 5 1
+  let p2pConfig = P2p.P2pConfig (P2p.PeerAddress bindAddress (read bindPort)) 5 5 1 25
   net <- Networking.start p2pConfig [seed] db
   let networkTimer = Networking.networkTime net
   putStrLn "started networking, starting up miner"

@@ -34,6 +34,7 @@ data P2pConfig = P2pConfig {
     , p2pConfigReconnectTimeout :: Int
     , p2pConfigAnnounceTimeout :: Int
     , p2pConfigTimerTimeout :: Int
+    , p2pConfigPeersConnectedLimit :: Int
       } deriving (Show)
 
 
@@ -227,9 +228,15 @@ serverMainLoop :: Sock.Socket -> P2p -> IO ()
 serverMainLoop sock p2p =
     forever $ do
       (conn, addr) <- Sock.accept sock
-      SBS.send conn $ encodeMsg $ P2pMessageHello $ p2pConfigBindAddress $ p2pConfig p2p
-      handlePeer conn addr p2p
-      return ()
+      connected <- length <$> (atomically $ readTVar $ p2pConnectedPeers p2p)
+      if connected <p2pConfigPeersConnectedLimit (p2pConfig p2p) 
+      then do SBS.send conn $ encodeMsg $ P2pMessageHello $ p2pConfigBindAddress $ p2pConfig p2p
+              handlePeer conn addr p2p
+              return ()
+      else do
+        putStrLn "dropping the connection as we already at top of connecte peers"
+        Sock.close sock
+        return ()
 
 
 
@@ -295,7 +302,9 @@ reconnectorLoop p2p = do
     toConnect <- atomically $ do
                         all <- readTVar $ p2pPeers p2p
                         connected <- readTVar $ p2pConnectedPeers p2p
-                        return $ (Set.\\) all connected
+                        if length connected < p2pConfigPeersConnectedLimit (p2pConfig p2p)
+                        then return $ (Set.\\) all connected
+                        else return Set.empty
     forM_ toConnect (\p -> forkIO $ reconnectPeer p2p p)
     reconnectorLoop p2p
 
