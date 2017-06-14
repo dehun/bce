@@ -2,8 +2,9 @@
 ** DONE implement network time sync
 ** DONE fix p2p exceptions
 ** DONE set limit on amount of peers to connect
-** TODO p2p transactions
-** persistent file storage for blockchain
+** DONE p2p transactions
+** TODO persistent storage for p2p peers
+** TODO persistent file storage for blockchain
 ** implement transactions
 ** investigate possibility of hard fork due to imperfect p2p
 ** optimize brag/ask - grow chain at N most, do not send whole blockchain because node is syncing from scratch

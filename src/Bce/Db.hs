@@ -6,12 +6,14 @@ import Bce.InitialBlock
 import Bce.Hash
 import Bce.Difficulity    
 import Bce.BlockChainHash
+import Bce.Util    
 
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM
 import Data.List
 import Control.Monad    
-import Debug.Trace    
+import Debug.Trace
+
 
 data Db = Db {
       dbBlockChain :: TVar BlockChain
@@ -82,10 +84,14 @@ getBlock db needle = do
 verifyTransaction :: Db -> Transaction -> STM Bool
 verifyTransaction db tx = return True -- TODO: implement me
 
+isTransactionInChain :: Db -> Transaction -> STM Bool
+isTransactionInChain db tx = return False -- TODO: implement me
+
 pushTransactions :: Db -> [Transaction] -> STM Bool
 pushTransactions db transactions = do
     oldTransactions <- readTVar $ dbTransactions db
-    newCorrectTransactions <- filterM (verifyTransaction db) transactions
+    newCorrectTransactions <- filterM (\tx -> andM [ verifyTransaction db tx
+                                                   , not <$> isTransactionInChain db tx ]) transactions
     let newTransactions = oldTransactions ++ newCorrectTransactions
     writeTVar (dbTransactions db) newTransactions
     return True

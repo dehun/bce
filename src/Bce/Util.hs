@@ -2,6 +2,7 @@ module Bce.Util where
 
 import Data.List
 import Data.Word8
+import Control.Monad    
 import qualified Data.ByteString as BS
 
 count :: (a -> Bool) -> [a] -> Int
@@ -33,3 +34,6 @@ discardResult fx = do
 
 secondsToMicroseconds :: Int -> Int
 secondsToMicroseconds x = x * 1000000         
+
+andM :: (Monad m, Traversable t) => t (m Bool) -> m Bool
+andM xs = and <$> sequence xs
