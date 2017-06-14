@@ -33,9 +33,8 @@ data NetworkMessage = Brag Int
                     | Ask Hash
                     | Propose [BlockChain.Block]
                     | Dunno Hash
+                    | PushTransactions [BlockChain.Transaction]
                       deriving (Show, Generic)
-
--- TODO: transactions? 
 
 -- serialization                               
 instance Bin.Binary Hash
@@ -81,8 +80,9 @@ handlePeerMessage net peer msg = do
                  Just prevBlock -> send net peer $ Ask
                                    $ (BlockChain.bhPrevBlockHeaderHash $ BlockChain.blockHeader prevBlock)
                  Nothing -> return ()
-               
-               
+      PushTransactions transactions -> do
+        atomically $ Db.pushTransactions (networkDb net) transactions
+        return ()
 
 networkListener :: Network -> IO ()
 networkListener net = do
@@ -107,13 +107,21 @@ bragger net =
           broadcast net $ Brag length
           loop
     in loop
+
+transactionsAnnouncer :: Network -> IO ()
+transactionsAnnouncer net = do
+  threadDelay (secondsToMicroseconds $ 5)
+  transactionsToAnnounce <- atomically $ (Db.getTransactions $ networkDb net)
+  broadcast net $ PushTransactions transactionsToAnnounce
+  transactionsAnnouncer net
               
 
 start :: P2p.P2pConfig -> [P2p.PeerAddress] -> Db.Db -> IO Network 
 start p2pConfig seeds db  = do
     network <- Network <$> (P2p.start seeds p2pConfig) <*> pure db
     forkIO $ networkListener network
-    forkIO $ bragger network           
+    forkIO $ bragger network
+    forkIO $ transactionsAnnouncer network
     return network
 
 broadcast :: Network -> NetworkMessage -> IO ()

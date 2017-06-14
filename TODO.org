@@ -2,6 +2,7 @@
 ** DONE implement network time sync
 ** DONE fix p2p exceptions
 ** DONE set limit on amount of peers to connect
+** TODO p2p transactions
 ** persistent file storage for blockchain
 ** implement transactions
 ** investigate possibility of hard fork due to imperfect p2p

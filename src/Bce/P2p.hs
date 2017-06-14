@@ -295,7 +295,6 @@ reconnectPeer p2p peerAddress = do
                           ++ "; err: " ++ show (err::Exception.IOException)
              atomically removeFromConnecting
 
-
 reconnectorLoop :: P2p -> IO ()
 reconnectorLoop p2p = do
     threadDelay (secondsToMicroseconds $ p2pConfigReconnectTimeout $ p2pConfig p2p)
@@ -323,7 +322,6 @@ timerLoop p2p = do
   broadcast p2p <$> P2pMessageTellTime <$> now
   timerLoop p2p
 
-
 start :: [PeerAddress] -> P2pConfig -> IO P2p
 start seeds config = do
   p2p <- P2p config <$> newTVarIO (Set.fromList seeds) <*> newTVarIO Set.empty
@@ -340,7 +338,7 @@ broadcast p2p msg = do
 
 send :: P2p -> PeerAddress -> P2pMessage -> IO ()
 send p2p peer msg =
-        atomically $ writeTChan (p2pSendChan p2p) (PeerSend msg  $ Just peer)
+        atomically $ writeTChan (p2pSendChan p2p) (PeerSend msg $ Just peer)
 
 broadcastPayload :: P2p -> BS.ByteString -> IO ()
 broadcastPayload p2p payload = broadcast p2p $ P2pMessagePayload payload

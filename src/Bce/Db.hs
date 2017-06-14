@@ -10,6 +10,7 @@ import Bce.BlockChainHash
 import Control.Concurrent.STM.TChan
 import Control.Concurrent.STM
 import Data.List
+import Control.Monad    
 import Debug.Trace    
 
 data Db = Db {
@@ -76,10 +77,18 @@ getBlock db needle = do
   blocks <- blockChainBlocks <$> readTVar (dbBlockChain db)
   return $ find (\b -> needle == hash b) blocks
 
--- transactions                        
+-- transactions
 
-pushTransaction :: Db -> Transaction -> STM Bool
-pushTransaction = undefined
+verifyTransaction :: Db -> Transaction -> STM Bool
+verifyTransaction db tx = return True -- TODO: implement me
+
+pushTransactions :: Db -> [Transaction] -> STM Bool
+pushTransactions db transactions = do
+    oldTransactions <- readTVar $ dbTransactions db
+    newCorrectTransactions <- filterM (verifyTransaction db) transactions
+    let newTransactions = oldTransactions ++ newCorrectTransactions
+    writeTVar (dbTransactions db) newTransactions
+    return True
 
 getTransactions :: Db -> STM [Transaction]
 getTransactions db = readTVar $ dbTransactions db
