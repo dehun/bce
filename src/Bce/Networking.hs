@@ -8,7 +8,8 @@ import qualified Bce.P2p as P2p
 import Bce.Hash
 import Bce.BlockChainHash
 import Bce.Util
-import Bce.TimeStamp    
+import Bce.TimeStamp
+import Bce.BlockChainSerialization    
 
 import qualified Data.Binary as Bin
 import GHC.Generics (Generic)
@@ -22,7 +23,6 @@ import Debug.Trace
 import Control.Concurrent    
 import Control.Concurrent.STM
 
-    
 
 type PeerAddress = P2p.PeerAddress    
 
@@ -35,16 +35,8 @@ data NetworkMessage = Brag Int
                     | Dunno Hash
                     | PushTransactions [BlockChain.Transaction]
                       deriving (Show, Generic)
-
--- serialization                               
-instance Bin.Binary Hash
-instance Bin.Binary BlockChain.TxOutputRef                    
-instance Bin.Binary BlockChain.TxOutput                
-instance Bin.Binary BlockChain.TxInput            
-instance Bin.Binary BlockChain.Transaction        
-instance Bin.Binary BlockChain.BlockHeader    
-instance Bin.Binary BlockChain.Block    
-instance Bin.Binary NetworkMessage
+instance Bin.Binary NetworkMessage    
+                               
 
 encodeMessage :: NetworkMessage -> BS.ByteString
 encodeMessage msg = BSL.toStrict $ BinPut.runPut $ Bin.put msg

@@ -18,8 +18,12 @@ library
                  , base16-bytestring
                  , binary
                  , bytestring
+                 , concurrent-extra
                  , containers
                  , cryptohash-sha256
+                 , data-default
+                 , directory
+                 , leveldb-haskell
                  , mtl
                  , network
                  , random
@@ -32,6 +36,7 @@ library
                    , Bce.Hash
                    , Bce.BlockChainHash
                    , Bce.BlockChainVerification
+                   , Bce.BlockChainSerialization
                    , Bce.Difficulity
                    , Bce.Util
                    , Bce.InitialBlock                   
@@ -40,7 +45,8 @@ library
                    , Bce.P2p
                    , Bce.Networking
                    , Bce.Miner
-                   , Bce.TimeStamp       
+                   , Bce.TimeStamp
+
     default-language:    Haskell2010    
                                          
 
@@ -52,7 +58,11 @@ executable bce
                          base,
                          bce,
                          binary,
+                         concurrent-extra,
                          containers,
+                         data-default,
+                         directory,
+                         leveldb-haskell,
                          mtl,
                          network,
                          random,
@@ -71,7 +81,11 @@ Test-Suite test-hunit-example
     Build-Depends:  base
                   , bce
                   , binary
+                  , concurrent-extra
                   , containers
+                  , data-default
+                  , directory
+                  , leveldb-haskell
                   , mtl
                   , network
                   , random

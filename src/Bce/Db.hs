@@ -98,9 +98,3 @@ pushTransactions db transactions = do
 
 getTransactions :: Db -> STM [Transaction]
 getTransactions db = readTVar $ dbTransactions db
-    
-      
-    
-
-
-    
