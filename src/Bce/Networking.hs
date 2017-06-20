@@ -63,7 +63,8 @@ handlePeerMessage net peer msg = do
                  Just blocks -> send net peer $ Propose blocks
                  Nothing -> send net peer $ Dunno fromHash
       Propose blocks -> do
-               Db.pushBlocks (networkDb net) blocks
+        putStrLn $ "pushing blocks to chain" ++ show (length blocks)
+        Db.pushBlocks (networkDb net) blocks
       Dunno fromHash -> do
                prevBlockOpt <- Db.getBlock db fromHash
                case prevBlockOpt of

@@ -14,7 +14,7 @@ cabal-version:       >=1.10
 
 library
     hs-source-dirs: src
-    ghc-options: -g
+    ghc-options: -g2 
     build-depends: base
                  , base16-bytestring
                  , binary
@@ -53,7 +53,7 @@ library
                                          
 
 executable bce
-    ghc-options: -g           
+    ghc-options: -g2
     main-is:             Main.hs
   -- other-modules:       
   -- other-extensions:    

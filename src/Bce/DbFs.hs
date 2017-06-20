@@ -86,14 +86,15 @@ nextBlocks db prevBlockHash = do
 
 loadDb :: Db -> IO ()
 loadDb db =  Lock.with (dbLock db) $ do
-    pushBlock db initialBlock
+    pushBlockNoLock db initialBlock
     continue (hash initialBlock)
     where continue fromHash = do
             nextBlocksHashes <- nextBlocks db fromHash
-            nextBlocks <- mapM (loadBlockFromDisk db) nextBlocksHashes
-            mapM_ (\nb -> pushBlock db nb) $ catMaybes nextBlocks
+            nextBlocks <- catMaybes <$> mapM (loadBlockFromDisk db) nextBlocksHashes
+            putStrLn $ "loading " ++ show nextBlocksHashes
+            mapM_ (\nb -> pushBlockNoLock db nb)  nextBlocks
             heads <- readIORef (dbHeads db) 
-            mapM_ (\b -> continue (hash $chainHeadBlockHeader b)) heads
+            mapM_ (\b -> continue (hash  b)) nextBlocks
 
 
 dbBlockPath :: Db -> Hash -> Path
@@ -111,7 +112,7 @@ loadBlockFromDisk db blockHash =
                                               return $ Just $ BinGet.runGet Bin.get content)
                     ) (\e -> do
                          let err = show (e :: Exception.IOException)
-                         putStrLn $ "error occured on block loading" ++ err
+--                         putStrLn $ "error occured on block loading" ++ err
                          return Nothing
                       )
 
@@ -139,13 +140,24 @@ chainLength db blockHash
 -- TODO: verify block!
 
 verifyBlock :: Db -> Block -> IO Bool
-verifyBlock db block = return True
+verifyBlock db block = do
+  let prevHash = bhPrevBlockHeaderHash $ blockHeader block
+  prevBlockOpt <- loadBlockFromDisk db prevHash                 
+  case prevBlockOpt of
+    Nothing -> return False
+    Just _ -> return True
+  
 
 pushBlocks :: Db -> [Block] -> IO ()
-pushBlocks db blocks = mapM_ (pushBlock db) blocks
+pushBlocks db blocks = mapM_ (pushBlock db) (reverse blocks) -- starting from oldest
 
 pushBlock :: Db -> Block -> IO Bool
 pushBlock db block = Lock.with (dbLock db) $ do
+                           pushBlockToDisk db block
+                           pushBlockNoLock db block
+                       
+pushBlockNoLock :: Db -> Block -> IO Bool
+pushBlockNoLock db block =  do
   isValidBlock <- verifyBlock db block
   if isValidBlock 
   then do
@@ -154,13 +166,13 @@ pushBlock db block = Lock.with (dbLock db) $ do
     let prevHeadOpt = find (\h -> prevBlockHash == (hash $ chainHeadBlockHeader h)) oldHeads
     newHeads <- case prevHeadOpt of
                   Nothing -> do
-                    newHead <- ChainHead (blockHeader block) <$> chainLength db (hash block)
+                    newHead <- ChainHead (blockHeader block)
+                               <$> chainLength db (bhPrevBlockHeaderHash $ blockHeader block)
                     return $ newHead : oldHeads
                   Just prevHead -> do
                     let newHead = ChainHead (blockHeader block) (1 + chainHeadLength prevHead)
                     let fixedHeads = delete prevHead oldHeads
                     return $ newHead : fixedHeads
-    pushBlockToDisk db block
     writeIORef (dbHeads db) newHeads
     return True
   else return False

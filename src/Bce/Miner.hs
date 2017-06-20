@@ -60,5 +60,6 @@ growChain db timer = do
       putStrLn $ show time ++ " got chain of length " ++ show headLength
                   ++ "; block difficulity is " ++ (show $ blockDifficulity topBlock)
                   ++ "; next difficulity is " ++ (show nextDiff)
+                  ++ "; blockhash is" ++ (show $ hash topBlock)
       return ()
     else return ()

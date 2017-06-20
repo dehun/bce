@@ -17,6 +17,7 @@ import System.Environment
 main :: IO ()
 main = do
   db <- Db.initDb "./tmpdb"
+  Db.loadDb db
   [bindAddress, bindPort, seedAddress, seedPort] <- getArgs
   let seed = P2p.PeerAddress seedAddress (read seedPort)
   let p2pConfig = P2p.P2pConfig (P2p.PeerAddress bindAddress (read bindPort)) 5 5 1 25
