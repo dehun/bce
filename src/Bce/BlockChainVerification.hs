@@ -45,7 +45,7 @@ verifyBlockChain (BlockChain blocks) =
           let ts = init $ zip blocks (tail $ tails blocks)
               difficulitiesStampedCorrectly =
                   all (\(b, t) -> bhDifficulity (blockHeader b)
-                                  == fromIntegral (nextDifficulity $ BlockChain t)) ts
+                                  == fromIntegral (nextDifficulity $ t)) ts
               difficulitiesOfBlocksMatchBlocks =
                   all (\b -> blockDifficulity b
                              >= fromIntegral (bhDifficulity $ blockHeader b))

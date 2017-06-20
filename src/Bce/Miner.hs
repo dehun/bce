@@ -8,7 +8,7 @@ import Bce.BlockChainVerification
 import Bce.InitialBlock
 import Bce.Difficulity
 import Bce.TimeStamp    
-import qualified Bce.Db as Db
+import qualified Bce.DbFs as Db
 
 import Data.Either    
 import Debug.Trace
@@ -45,19 +45,20 @@ growChain db timer = do
   forever $ do
     time <- timer
     rnd <- randomIO :: IO Int64
-    generated <- atomically $ do
+    generated <- do
       cbtx <- coinbaseTransaction <$> Db.getTransactions db
       txs <- (:) cbtx <$> Db.getTransactions db
-      next <- tryGenerateBlock time rnd <$> Db.getTopBlock db <*> pure txs <*> Db.getNextDifficulity db
+      (_, topBlock) <- Db.getLongestHead db
+      next <- tryGenerateBlock time rnd <$> pure topBlock <*> pure txs <*> Db.getNextDifficulity db
       case next of
-        Just blk -> Db.growChain db blk
+        Just blk -> Db.pushBlock db blk
         Nothing -> return False
     if generated
     then do
-        (bcLength, nextDiff, topBlock) <-
-            atomically $ ((,,) <$> Db.getChainLength db <*> Db.getNextDifficulity db <*> Db.getTopBlock db)
-        putStrLn $ show time ++ " got chain of length " ++ (show bcLength)
+      (headLength, topBlock) <- Db.getLongestHead db
+      nextDiff <- Db.getNextDifficulity db
+      putStrLn $ show time ++ " got chain of length " ++ show headLength
                   ++ "; block difficulity is " ++ (show $ blockDifficulity topBlock)
                   ++ "; next difficulity is " ++ (show nextDiff)
-        return ()
+      return ()
     else return ()

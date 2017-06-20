@@ -39,7 +39,7 @@ getNextDifficulity :: Db -> STM Difficulity
 getNextDifficulity db =
      do
       chain <- readTVar $ dbBlockChain db
-      return $ nextDifficulity chain
+      return $ nextDifficulity (blockChainBlocks chain)
 
 growChain :: Db -> Block -> STM Bool
 growChain db newBlock = 

@@ -3,7 +3,7 @@
 module Bce.Networking where
 
 import qualified Bce.BlockChain as BlockChain
-import qualified Bce.Db as Db
+import qualified Bce.DbFs as Db
 import qualified Bce.P2p as P2p
 import Bce.Hash
 import Bce.BlockChainHash
@@ -53,27 +53,25 @@ handlePeerMessage net peer msg = do
     case msg of
       Brag braggedLen -> do
 --               putStrLn $ "saw bragger with length!" ++ show braggedLen
-               (dbLen, topBlock) <- atomically $ do
-                                      (,) <$> (Db.getChainLength db)
-                                              <*> (Db.getTopBlock db)
+               (dbLen, topBlock) <- Db.getLongestHead db
                if dbLen < braggedLen
                then send net peer $ Ask $ hash topBlock
                else return ()
       Ask fromHash -> do
-               blocksOpt <- atomically $ Db.blocksFromHash (networkDb net) fromHash
+               blocksOpt <- Db.getBlocksFromHash (networkDb net) fromHash
                case blocksOpt of
                  Just blocks -> send net peer $ Propose blocks
                  Nothing -> send net peer $ Dunno fromHash
       Propose blocks -> do
-               discardResult $ atomically $ Db.regrowChain (networkDb net) blocks
+               Db.pushBlocks (networkDb net) blocks
       Dunno fromHash -> do
-               prevBlockOpt <- atomically $  Db.getBlock db fromHash
+               prevBlockOpt <- Db.getBlock db fromHash
                case prevBlockOpt of
                  Just prevBlock -> send net peer $ Ask
                                    $ (BlockChain.bhPrevBlockHeaderHash $ BlockChain.blockHeader prevBlock)
                  Nothing -> return ()
       PushTransactions transactions -> do
-        atomically $ Db.pushTransactions (networkDb net) transactions
+        Db.pushTransactions (networkDb net) transactions
         return ()
 
 networkListener :: Network -> IO ()
@@ -94,7 +92,7 @@ bragger :: Network -> IO ()
 bragger net =
     let loop = do
           threadDelay (secondsToMicroseconds $ 5)
-          length <- atomically $ Db.getChainLength (networkDb net)
+          (length, _) <- Db.getLongestHead (networkDb net)
 --          putStrLn $ "bragging with length of " ++ show length
           broadcast net $ Brag length
           loop
@@ -103,7 +101,7 @@ bragger net =
 transactionsAnnouncer :: Network -> IO ()
 transactionsAnnouncer net = do
   threadDelay (secondsToMicroseconds $ 5)
-  transactionsToAnnounce <- atomically $ (Db.getTransactions $ networkDb net)
+  transactionsToAnnounce <- Db.getTransactions $ networkDb net
   broadcast net $ PushTransactions transactionsToAnnounce
   transactionsAnnouncer net
               

@@ -2,6 +2,7 @@ module Bce.Util where
 
 import Data.List
 import Data.Word8
+import Data.Maybe    
 import Control.Monad    
 import qualified Data.ByteString as BS
 

@@ -29,8 +29,8 @@ blockDifficulity b =
     length $ takeWhile (==0) $ to01List $ hashBs $ hash $ blockHeader b
 
            
-growthSpeed :: BlockChain -> SecondsPerBlock
-growthSpeed (BlockChain blocks) =
+growthSpeed :: [Block] -> SecondsPerBlock
+growthSpeed blocks =
     let
         recalculationBlocks = take difficulityRecalculationBlocks blocks
         blockTimestamp = fromIntegral . bhWallClockTime . blockHeader                              
@@ -41,19 +41,19 @@ growthSpeed (BlockChain blocks) =
 
 comparsionThresholdSeconds = secondsPerBlock / 10
     
-nextDifficulity :: BlockChain -> LeadingZeros
-nextDifficulity bc 
-    | length (blockChainBlocks bc)  < difficulityRecalculationBlocks = defaultDifficulity
+nextDifficulity :: [Block] -> LeadingZeros
+nextDifficulity blocks
+    | length blocks  < difficulityRecalculationBlocks = defaultDifficulity
     | otherwise =
         let
-            newest = head $ blockChainBlocks bc
-            recalculationBlocks = take difficulityRecalculationBlocks $ blockChainBlocks bc 
+            newest = head $ blocks
+            recalculationBlocks = take difficulityRecalculationBlocks $ blocks
             lastDifficulity = fromIntegral $ bhDifficulity $ blockHeader newest
             avgDifficulity = round $ average $ map (fromIntegral .bhDifficulity . blockHeader) recalculationBlocks
-            next = case compare (growthSpeed bc) secondsPerBlock of
+            next = case compare (growthSpeed blocks) secondsPerBlock of
                      LT -> avgDifficulity + 1
                      EQ -> avgDifficulity
                      GT -> avgDifficulity - 1
-        in if abs (growthSpeed bc - secondsPerBlock) < comparsionThresholdSeconds
+        in if abs (growthSpeed blocks - secondsPerBlock) < comparsionThresholdSeconds
            then lastDifficulity
            else min (max next minDifficulity) maxDifficulity

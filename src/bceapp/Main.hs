@@ -2,10 +2,12 @@ module Main where
 
 import Bce.BlockChain
 import qualified Bce.P2p as P2p    
-import qualified Bce.Db as Db    
 import qualified Bce.Networking as Networking
-import qualified Bce.Miner as Miner    
+import qualified Bce.Miner as Miner
 
+import qualified Bce.DbFs as Db     
+import Bce.InitialBlock
+    
     
 import Control.Monad
 import Control.Concurrent
@@ -14,7 +16,7 @@ import System.Environment
 -- ./dist/build/bce/bce "(127,0,0,1)" 3555 "(127,0,0,1)" 3777 
 main :: IO ()
 main = do
-  db <- Db.newDb  
+  db <- Db.initDb "./tmpdb"
   [bindAddress, bindPort, seedAddress, seedPort] <- getArgs
   let seed = P2p.PeerAddress seedAddress (read seedPort)
   let p2pConfig = P2p.P2pConfig (P2p.PeerAddress bindAddress (read bindPort)) 5 5 1 25

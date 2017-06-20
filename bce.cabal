@@ -7,13 +7,14 @@ license-file:        LICENSE
 author:              Yuriy Netesov
 maintainer:          yuriy.netesov@gmail.com
 -- copyright:           
--- category:            
+-- category:
 build-type:          Simple
 extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 library
     hs-source-dirs: src
+    ghc-options: -g
     build-depends: base
                  , base16-bytestring
                  , binary
@@ -46,11 +47,13 @@ library
                    , Bce.Networking
                    , Bce.Miner
                    , Bce.TimeStamp
+                   , Bce.DbFs
 
     default-language:    Haskell2010    
                                          
 
 executable bce
+    ghc-options: -g           
     main-is:             Main.hs
   -- other-modules:       
   -- other-extensions:    
