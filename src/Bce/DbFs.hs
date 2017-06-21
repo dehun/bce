@@ -28,7 +28,8 @@ import System.IO
 import System.Directory    
 import Data.Default
 import Data.Maybe
-import Control.Monad.Trans.Maybe    
+import Data.Either    
+import Control.Monad.Trans.Either    
 import Data.List
 import Data.Ord    
 import Control.Monad.IO.Class (liftIO)
@@ -132,20 +133,35 @@ chainLength :: Db -> Hash -> IO Int
 chainLength db blockHash
     | blockHash == hash initialBlock = return 1
     | otherwise = do
-        block <-  loadBlockFromDisk db blockHash
-        let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader (fromJust block)
+        Just block <-  loadBlockFromDisk db blockHash
+        let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader block
         (+1) <$> chainLength db prevBlockHash
 
 
--- TODO: verify block!
+-- TODO: move verification away from here!
 
-verifyBlock :: Db -> Block -> IO Bool
-verifyBlock db block = do
+verifyPrevBlockHashCorrect db block = do
   let prevHash = bhPrevBlockHeaderHash $ blockHeader block
-  prevBlockOpt <- loadBlockFromDisk db prevHash                 
-  case prevBlockOpt of
-    Nothing -> return False
-    Just _ -> return True
+  prevBlockOpt <- liftIO $ loadBlockFromDisk db prevHash
+  guard (isJust prevBlockOpt) `mplus` left "wrong prev block hash"
+
+
+verifyBlockDifficulity db block = do
+  expectedDifficulity <- liftIO $ getNextDifficulityNoLock db
+  let actualDifficulity = blockDifficulity block
+  let stampedDifficulity = fromIntegral $ bhDifficulity $ blockHeader block
+  guard (stampedDifficulity == expectedDifficulity) `mplus` left "wrong stamped difficulity"
+  guard (actualDifficulity >= expectedDifficulity) `mplus` left "wrong difficulity" 
+
+
+verifyBlock :: Db -> Block -> EitherT String IO [()]
+verifyBlock db block = sequence
+                       [ verifyPrevBlockHashCorrect db block
+                       , verifyBlockDifficulity db block]
+
+
+--- end of verification, move is somewhere elso!
+  
   
 
 pushBlocks :: Db -> [Block] -> IO ()
@@ -158,7 +174,7 @@ pushBlock db block = Lock.with (dbLock db) $ do
                        
 pushBlockNoLock :: Db -> Block -> IO Bool
 pushBlockNoLock db block =  do
-  isValidBlock <- verifyBlock db block
+  isValidBlock <- isRight <$> (runEitherT $ verifyBlock db block)
   if isValidBlock 
   then do
     let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader $ block
@@ -194,8 +210,8 @@ longestHead db = maximumBy (comparing chainHeadLength) <$> readIORef (dbHeads db
 getLongestHead :: Db -> IO (Int, Block)
 getLongestHead db = Lock.with (dbLock db) $ do
   head <- longestHead db
-  blk <- loadBlockFromDisk db $ hash $ chainHeadBlockHeader head
-  return (chainHeadLength head, fromJust blk)
+  Just blk <- loadBlockFromDisk db $ hash $ chainHeadBlockHeader head
+  return (chainHeadLength head, blk)
                  
 
 getBlocksFromHash :: Db -> Hash -> IO (Maybe [Block])
@@ -239,13 +255,16 @@ lastNBlocks db n = do
           | s == border = return $ reverse bs
           | k == 0 = return $ reverse bs
           | otherwise = do
-                     block <- fromJust <$> loadBlockFromDisk db s
+                     Just block <- loadBlockFromDisk db s
                      let nxt = bhPrevBlockHeaderHash $ blockHeader block
                      continue nxt (k -1) (block:bs)
   continue start n []
 
-getNextDifficulity :: Db -> IO Difficulity
-getNextDifficulity db = Lock.with (dbLock db) $ do
-                          blocks <- lastNBlocks db difficulityRecalculationBlocks
-                          return $ nextDifficulity blocks
+getNextDifficulity :: Db -> IO Difficulity           
+getNextDifficulity db = Lock.with (dbLock db) $ getNextDifficulityNoLock db
+           
+getNextDifficulityNoLock :: Db -> IO Difficulity
+getNextDifficulityNoLock db =  do
+  blocks <- lastNBlocks db difficulityRecalculationBlocks
+  return $ nextDifficulity blocks
     

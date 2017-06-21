@@ -32,6 +32,7 @@ library
                  , time
                  , transformers
                  , word8
+                 , either
                  
     exposed-modules: Bce.BlockChain
                    , Bce.Hash
@@ -72,7 +73,8 @@ executable bce
                          stm,
                          time,
                          transformers,
-                         word8
+                         word8,
+                         either
     hs-source-dirs: src/bceapp
     default-language:    Haskell2010
 
@@ -98,5 +100,6 @@ Test-Suite test-hunit-example
                   , time
                   , transformers
                   , word8
+                  , either
     default-language:    Haskell2010                  
                          

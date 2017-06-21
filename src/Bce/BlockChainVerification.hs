@@ -53,6 +53,3 @@ verifyBlockChain (BlockChain blocks) =
           in and [ difficulitiesOfBlocksMatchBlocks
                  , difficulitiesStampedCorrectly
                  ]
-
-
-
