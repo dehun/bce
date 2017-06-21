@@ -52,7 +52,8 @@ type Path = String
 data Index = Index
 
 data ChainHead = ChainHead { chainHeadBlockHeader :: BlockHeader
-                           , chainHeadLength :: Int } deriving (Show, Eq)
+                           , chainHeadLength :: Int
+                           , chainHeadBranchedFrom :: Hash } deriving (Show, Eq)
 
 instance Ord ChainHead where
     compare l r = compare
@@ -81,7 +82,7 @@ initDb dataDir =  do
   withBinaryFile (blockPath dataDir $ hash initialBlock) WriteMode
                    $ (\h -> BSL.hPut h (BinPut.runPut $ Bin.put initialBlock))
   
-  let startHead = ChainHead (blockHeader initialBlock) 1
+  let startHead = ChainHead (blockHeader initialBlock) 1 (hash initialBlock) -- hack!
   Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
          <*> pure blocksIndexDb <*> newIORef (Set.fromList [startHead]) <*> newIORef []
 
@@ -197,11 +198,12 @@ pushBlockToHeads db block =  do
     let prevHeadOpt = find (\h -> prevBlockHash == (hash $ chainHeadBlockHeader h)) oldHeads
     newHeads <- case prevHeadOpt of
                   Nothing -> do
-                    newHead <- ChainHead (blockHeader block)
-                               <$> chainLength db (bhPrevBlockHeaderHash $ blockHeader block)
+                    newHeadLength <- chainLength db (bhPrevBlockHeaderHash $ blockHeader block)
+                    let newHead = ChainHead (blockHeader block) (1 + newHeadLength) (bhPrevBlockHeaderHash $ blockHeader block)
                     return $ Set.insert newHead oldHeads
                   Just prevHead -> do
                     let newHead = ChainHead (blockHeader block) (1 + chainHeadLength prevHead)
+                                  (chainHeadBranchedFrom prevHead)
                     let fixedHeads = Set.delete prevHead oldHeads
                     return $ Set.insert newHead fixedHeads
     writeIORef (dbHeads db) newHeads
@@ -257,12 +259,6 @@ getBlocksToHash db toHash amount
     Nothing -> return [] 
      
     
-
--- kill unperspective forks
-prune :: Db -> IO ()
-prune db = return () -- TODO: implement me
-
-
 -- txs!
 getTransactions :: Db -> IO [Transaction]
 getTransactions db = Lock.with (dbLock db) $ do
@@ -273,6 +269,9 @@ pushTransactions :: Db -> [Transaction] -> IO ()
 pushTransactions db newTransactions = Lock.with (dbLock db) $ do
                         oldTransactions <- readIORef (dbTransactions db)
                         writeIORef (dbTransactions db) (oldTransactions ++ newTransactions)
+
+
+--                                    
 
 
 lastNBlocks :: Db -> Int -> IO [Block]
@@ -296,3 +295,11 @@ getNextDifficulityNoLock db =  do
   blocks <- lastNBlocks db difficulityRecalculationBlocks
   return $ nextDifficulity blocks
     
+
+
+-- kill unperspective forks
+prune :: Db -> IO ()
+prune db = return () -- TODO: implement me
+
+
+         
