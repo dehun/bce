@@ -210,6 +210,7 @@ clientSendLoop sock peerAddr p2p = do
                                  else return 0
                    clientSendLoop sock peerAddr p2p)
                (\e -> do
+                  Sock.close sock
                   putStrLn $ "killing peer connection at addr" ++ (show peerAddr)
                                ++ "catched" ++ show (e :: Exception.IOException)
                   killPeer peerAddr p2p
@@ -235,7 +236,7 @@ serverMainLoop sock p2p =
               return ()
       else do
         putStrLn "dropping the connection as we already at top of connecte peers"
-        Sock.close sock
+        Sock.close conn
         return ()
 
 
@@ -291,6 +292,7 @@ reconnectPeer p2p peerAddress = do
              forkIO $ handlePeer sock (peerAddressToSockAddr peerAddress) p2p
              return ()
           Left err -> do
+             Sock.close sock          
              putStrLn $  "connect failed to " ++ show peerAddress
                           ++ "; err: " ++ show (err::Exception.IOException)
              atomically removeFromConnecting

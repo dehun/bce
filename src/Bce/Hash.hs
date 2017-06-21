@@ -12,7 +12,7 @@ import GHC.Int(Int64)
 import GHC.Generics (Generic)
 import Data.Binary    
 
-data Hash = Hash { hashBs :: BS.ByteString } deriving (Eq, Generic)
+data Hash = Hash { hashBs :: BS.ByteString } deriving (Eq, Ord, Generic)
 
 instance Show Hash where
     show (Hash h) = BS.unpack $ B16.encode h

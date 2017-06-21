@@ -20,7 +20,9 @@ import Bce.BlockChainHash
 import Bce.BlockChainSerialization    
 import Bce.TimeStamp
 import Bce.Difficulity    
-import Bce.Util    
+import Bce.Util
+
+import qualified Data.Set as Set
 
 
 import Data.IORef
@@ -51,6 +53,11 @@ data Index = Index
 
 data ChainHead = ChainHead { chainHeadBlockHeader :: BlockHeader
                            , chainHeadLength :: Int } deriving (Show, Eq)
+
+instance Ord ChainHead where
+    compare l r = compare
+                  (hash $ chainHeadBlockHeader l, chainHeadLength l)
+                  (hash $ chainHeadBlockHeader r, chainHeadLength r)
     
 
 data Db = Db {
@@ -58,7 +65,7 @@ data Db = Db {
     , dbDataDir :: Path
     , dbTxIndex :: LevelDb.DB
     , dbBlocksIndex :: LevelDb.DB
-    , dbHeads :: IORef [ChainHead]
+    , dbHeads :: IORef (Set.Set ChainHead)
     , dbTransactions :: IORef [Transaction]
       }
 
@@ -76,13 +83,13 @@ initDb dataDir =  do
   
   let startHead = ChainHead (blockHeader initialBlock) 1
   Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
-         <*> pure blocksIndexDb <*> newIORef [startHead] <*> newIORef []
+         <*> pure blocksIndexDb <*> newIORef (Set.fromList [startHead]) <*> newIORef []
 
 
-nextBlocks :: Db -> Hash -> IO [Hash]
+nextBlocks :: Db -> Hash -> IO (Set.Set Hash)
 nextBlocks db prevBlockHash = do
   nextBlocksBs <- LevelDb.get (dbBlocksIndex db) def (hashBs prevBlockHash) 
-  return $ fromMaybe [] $ (BinGet.runGet Bin.get <$> (BSL.fromStrict <$> nextBlocksBs))
+  return $ fromMaybe Set.empty $ (BinGet.runGet Bin.get <$> (BSL.fromStrict <$> nextBlocksBs))
       
 
 loadDb :: Db -> IO ()
@@ -90,7 +97,7 @@ loadDb db =  Lock.with (dbLock db) $ do
     pushBlockNoLock db initialBlock
     continue (hash initialBlock)
     where continue fromHash = do
-            nextBlocksHashes <- nextBlocks db fromHash
+            nextBlocksHashes <- Set.toList <$> nextBlocks db fromHash
             nextBlocks <- catMaybes <$> mapM (loadBlockFromDisk db) nextBlocksHashes
             putStrLn $ "loading " ++ show nextBlocksHashes
             mapM_ (\nb -> pushBlockNoLock db nb)  nextBlocks
@@ -123,7 +130,7 @@ pushBlockToDisk db block = do
     withBinaryFile (dbBlockPath db $ hash block) WriteMode
                    $ (\h -> BSL.hPut h (BinPut.runPut $ Bin.put block))
     let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader $ block
-    newNextBlocks <- (:) (hash block) <$> nextBlocks db prevBlockHash
+    newNextBlocks <- Set.insert (hash block) <$> nextBlocks db prevBlockHash
     LevelDb.put (dbBlocksIndex db) def (hashBs prevBlockHash)
                (BSL.toStrict $ BinPut.runPut $ Bin.put newNextBlocks)
     -- TODO: transactions index!
@@ -133,7 +140,7 @@ chainLength :: Db -> Hash -> IO Int
 chainLength db blockHash
     | blockHash == hash initialBlock = return 1
     | otherwise = do
-        Just block <-  loadBlockFromDisk db blockHash
+        Just block <- loadBlockFromDisk db blockHash
         let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader block
         (+1) <$> chainLength db prevBlockHash
 
@@ -147,7 +154,9 @@ verifyPrevBlockHashCorrect db block = do
 
 
 verifyBlockDifficulity db block = do
-  expectedDifficulity <- liftIO $ getNextDifficulityNoLock db
+  let prevHash = (bhPrevBlockHeaderHash $ blockHeader block)
+  prevBlocks <- liftIO $ getBlocksToHash db prevHash difficulityRecalculationBlocks
+  let expectedDifficulity = nextDifficulity prevBlocks
   let actualDifficulity = blockDifficulity block
   let stampedDifficulity = fromIntegral $ bhDifficulity $ blockHeader block
   guard (stampedDifficulity == expectedDifficulity) `mplus` left "wrong stamped difficulity"
@@ -155,9 +164,9 @@ verifyBlockDifficulity db block = do
 
 
 verifyBlock :: Db -> Block -> EitherT String IO [()]
-verifyBlock db block = sequence
-                       [ verifyPrevBlockHashCorrect db block
-                       , verifyBlockDifficulity db block]
+verifyBlock db block = do
+    sequence [ verifyPrevBlockHashCorrect db block
+             , verifyBlockDifficulity db block ]
 
 
 --- end of verification, move is somewhere elso!
@@ -168,15 +177,21 @@ pushBlocks :: Db -> [Block] -> IO ()
 pushBlocks db blocks = mapM_ (pushBlock db) (reverse blocks) -- starting from oldest
 
 pushBlock :: Db -> Block -> IO Bool
-pushBlock db block = Lock.with (dbLock db) $ do
-                           pushBlockToDisk db block
-                           pushBlockNoLock db block
+pushBlock db block = Lock.with (dbLock db) $ pushBlockNoLock db block
                        
 pushBlockNoLock :: Db -> Block -> IO Bool
-pushBlockNoLock db block =  do
-  isValidBlock <- isRight <$> (runEitherT $ verifyBlock db block)
-  if isValidBlock 
-  then do
+pushBlockNoLock db block = do
+                       verificationResult <- runEitherT $ verifyBlock db block
+                       case  verificationResult of
+                         Right _ -> do
+                           pushBlockToDisk db block
+                           pushBlockToHeads db block
+                         Left err -> do
+                             putStrLn $ "verification  pushing block failed: " ++ err
+                             return False
+                       
+pushBlockToHeads :: Db -> Block -> IO Bool
+pushBlockToHeads db block =  do
     let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader $ block
     oldHeads <- readIORef $ dbHeads db
     let prevHeadOpt = find (\h -> prevBlockHash == (hash $ chainHeadBlockHeader h)) oldHeads
@@ -184,14 +199,13 @@ pushBlockNoLock db block =  do
                   Nothing -> do
                     newHead <- ChainHead (blockHeader block)
                                <$> chainLength db (bhPrevBlockHeaderHash $ blockHeader block)
-                    return $ newHead : oldHeads
+                    return $ Set.insert newHead oldHeads
                   Just prevHead -> do
                     let newHead = ChainHead (blockHeader block) (1 + chainHeadLength prevHead)
-                    let fixedHeads = delete prevHead oldHeads
-                    return $ newHead : fixedHeads
+                    let fixedHeads = Set.delete prevHead oldHeads
+                    return $ Set.insert newHead fixedHeads
     writeIORef (dbHeads db) newHeads
     return True
-  else return False
 
 
 getBlock :: Db -> Hash -> IO (Maybe Block)
@@ -228,6 +242,20 @@ getBlocksFromHash db fromHash =
     in Lock.with (dbLock db) $ do
       s <- hash <$> chainHeadBlockHeader <$> longestHead db
       continue s []
+
+getBlocksToHash :: Db -> Hash -> Int -> IO [Block]               
+getBlocksToHash db toHash amount
+    | amount == 0 = return []
+    | toHash == hash initialBlock = return []
+    | otherwise = do
+  blockOpt <- loadBlockFromDisk db toHash :: IO (Maybe Block)
+  case blockOpt of
+    Just block -> do
+                  let prevHash = bhPrevBlockHeaderHash $ blockHeader block
+                  prevBlocks <- getBlocksToHash db prevHash (amount - 1)
+                  return (block : prevBlocks)
+    Nothing -> return [] 
+     
     
 
 -- kill unperspective forks
