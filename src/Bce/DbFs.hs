@@ -22,8 +22,6 @@ import Bce.TimeStamp
 import Bce.Difficulity    
 import Bce.Util
 
-import qualified Data.Set as Set
-
 
 import Data.IORef
 import System.IO
@@ -35,7 +33,8 @@ import Control.Monad.Trans.Either
 import Data.List
 import Data.Ord    
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad    
+import Control.Monad
+import qualified Data.Set as Set    
 import qualified Control.Concurrent.Lock as Lock
 import qualified Database.LevelDB.Base as LevelDb
 import qualified Data.Binary as Bin
@@ -44,16 +43,13 @@ import qualified Data.Binary.Put as BinPut
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import qualified Control.Exception as Exception    
-
     
 
 type Path = String
-
-data Index = Index
-
 data ChainHead = ChainHead { chainHeadBlockHeader :: BlockHeader
                            , chainHeadLength :: Int
-                           , chainHeadBranchedFrom :: Hash } deriving (Show, Eq)
+                           , chainHeadBranchedFrom :: Hash
+                           , chainHeadLastUpdated :: TimeStamp } deriving (Show, Eq)
 
 instance Ord ChainHead where
     compare l r = compare
@@ -82,7 +78,7 @@ initDb dataDir =  do
   withBinaryFile (blockPath dataDir $ hash initialBlock) WriteMode
                    $ (\h -> BSL.hPut h (BinPut.runPut $ Bin.put initialBlock))
   
-  let startHead = ChainHead (blockHeader initialBlock) 1 (hash initialBlock) -- hack!
+  startHead <- ChainHead (blockHeader initialBlock) 1 (hash initialBlock) <$> now
   Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
          <*> pure blocksIndexDb <*> newIORef (Set.fromList [startHead]) <*> newIORef []
 
@@ -199,11 +195,12 @@ pushBlockToHeads db block =  do
     newHeads <- case prevHeadOpt of
                   Nothing -> do
                     newHeadLength <- chainLength db (bhPrevBlockHeaderHash $ blockHeader block)
-                    let newHead = ChainHead (blockHeader block) (1 + newHeadLength) (bhPrevBlockHeaderHash $ blockHeader block)
+                    newHead <- ChainHead (blockHeader block) (1 + newHeadLength)
+                               (bhPrevBlockHeaderHash $ blockHeader block) <$> now
                     return $ Set.insert newHead oldHeads
                   Just prevHead -> do
-                    let newHead = ChainHead (blockHeader block) (1 + chainHeadLength prevHead)
-                                  (chainHeadBranchedFrom prevHead)
+                    newHead <- ChainHead (blockHeader block) (1 + chainHeadLength prevHead)
+                                  (chainHeadBranchedFrom prevHead) <$> now
                     let fixedHeads = Set.delete prevHead oldHeads
                     return $ Set.insert newHead fixedHeads
     writeIORef (dbHeads db) newHeads
@@ -228,8 +225,9 @@ getLongestHead db = Lock.with (dbLock db) $ do
   head <- longestHead db
   Just blk <- loadBlockFromDisk db $ hash $ chainHeadBlockHeader head
   return (chainHeadLength head, blk)
-                 
-
+         
+        
+-- TODO: use next blocks and longest head (we have branches)
 getBlocksFromHash :: Db -> Hash -> IO (Maybe [Block])
 getBlocksFromHash db fromHash =
     let continue bh acc
@@ -298,8 +296,18 @@ getNextDifficulityNoLock db =  do
 
 
 -- kill unperspective forks
+headTtl = round $ secondsPerBlock * 100
+
 prune :: Db -> IO ()
-prune db = return () -- TODO: implement me
+prune db = Lock.with (dbLock db) $ do
+             thisMoment <- now
+             deathRow <- Set.filter (\h -> thisMoment - (chainHeadLastUpdated h) > headTtl)
+                            <$> (readIORef $ dbHeads db)
+             longestHead <- longestHead db -- have mercy on the longest
+             forM_ (Set.delete longestHead deathRow) (pruneHead db)
 
-
+pruneHead :: Db -> ChainHead -> IO ()
+pruneHead db deadHead = return () -- TODO: implement me
+  
+  
          
