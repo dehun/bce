@@ -21,6 +21,7 @@ import Bce.BlockChainSerialization
 import Bce.TimeStamp
 import Bce.Difficulity    
 import Bce.Util
+import Bce.Logger
 
 
 import Data.IORef
@@ -91,12 +92,15 @@ nextBlocks db prevBlockHash = do
 
 loadDb :: Db -> IO ()
 loadDb db =  Lock.with (dbLock db) $ do
+    logInfo "loading database"
     pushBlockNoLock db initialBlock
     continue (hash initialBlock)
+    head <- longestHead db
+    logInfo $ "loaded blocks, longest head is " ++ show (chainHeadLength head) 
     where continue fromHash = do
             nextBlocksHashes <- Set.toList <$> nextBlocks db fromHash
             nextBlocks <- catMaybes <$> mapM (loadBlockFromDisk db) nextBlocksHashes
-            putStrLn $ "loading " ++ show nextBlocksHashes
+            logDebug $ "loading " ++ show nextBlocksHashes
             mapM_ (\nb -> pushBlockNoLock db nb)  nextBlocks
             heads <- readIORef (dbHeads db) 
             mapM_ (\b -> continue (hash  b)) nextBlocks
@@ -117,7 +121,7 @@ loadBlockFromDisk db blockHash =
                                               return $ Just $ BinGet.runGet Bin.get content)
                     ) (\e -> do
                          let err = show (e :: Exception.IOException)
---                         putStrLn $ "error occured on block loading" ++ err
+                         logTrace $ "error occured on block loading" ++ err
                          return Nothing
                       )
 
@@ -184,7 +188,7 @@ pushBlockNoLock db block = do
                            pushBlockToDisk db block
                            pushBlockToHeads db block
                          Left err -> do
-                             putStrLn $ "verification  pushing block failed: " ++ err
+                             logWarning $ "verification  pushing block failed: " ++ err
                              return False
                        
 pushBlockToHeads :: Db -> Block -> IO Bool

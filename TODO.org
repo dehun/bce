@@ -4,13 +4,21 @@
 ** DONE set limit on amount of peers to connect
 ** DONE p2p transactions
 ** DONE persistent file storage for blockchain
-** TODO dead head pruning
+** TODO introduce normal logger
 ** TODO verification
 ** TODO move verification away from db
+** TODO implement transactions
+** TODO persistent storage for p2p peers
+** TODO implement rest api
+*** TODO balance request
+*** TODO push transaction request
+*** TODO find transaction request
+*** TODO network status request
+*** TODO node status request
+** TODO dead head pruning
 ** TODO optimize brag/ask - grow chain at N most, do not send whole blockchain because node is syncing from scratch
 ** TODO improve p2p again - 2 connections to same peer should not be possible
-** TODO persistent storage for p2p peers
-** implement transactions
-** investigate possibility of hard fork due to imperfect p2p
-** select memory hard pow
-** set limit on amount of peers to store
+** TODO investigate possibility of hard fork due to imperfect p2p
+** TODO select memory hard pow
+** TODO configuration
+** TODO set limit on amount of peers to store

@@ -7,7 +7,8 @@ import Bce.BlockChainHash
 import Bce.BlockChainVerification
 import Bce.InitialBlock
 import Bce.Difficulity
-import Bce.TimeStamp    
+import Bce.TimeStamp
+import Bce.Logger
 import qualified Bce.DbFs as Db
 
 import Data.Either    
@@ -57,7 +58,7 @@ growChain db timer = do
     then do
       (headLength, topBlock) <- Db.getLongestHead db
       nextDiff <- Db.getNextDifficulity db
-      putStrLn $ show time ++ " got chain of length " ++ show headLength
+      logInfo $ show time ++ " got chain of length " ++ show headLength
                   ++ "; block difficulity is " ++ (show $ blockDifficulity topBlock)
                   ++ "; next difficulity is " ++ (show nextDiff)
                   ++ "; blockhash is" ++ (show $ hash topBlock)

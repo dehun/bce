@@ -4,6 +4,7 @@ module Bce.P2p where
 
 import Bce.Util
 import Bce.TimeStamp
+import Bce.Logger    
     
 import Data.Binary
 import GHC.Generics (Generic)
@@ -122,10 +123,10 @@ pollMessagesFromClientBufer s' =
 
 handlePeerMessage :: Sock.Socket -> P2p -> P2pMessage -> State.StateT P2pClientState IO ()
 handlePeerMessage sock p2p msg = do
---  liftIO $ putStrLn $ "got msg " ++ show msg
+  liftIO $ logTrace $ "p2p got msg " ++ show msg
   case msg of
     P2pMessageHello peer -> do
-                      liftIO $ putStrLn $ "hello from " ++ show peer
+                      liftIO $ logTrace $ "hello from " ++ show peer
                       liftIO $ atomically $ do
                               oldPeers <- readTVar (p2pPeers p2p)
                               writeTVar (p2pPeers p2p) (Set.insert peer oldPeers)
@@ -141,13 +142,12 @@ handlePeerMessage sock p2p msg = do
                               writeTVar (p2pPeerThreads p2p) newThreads
                       return ()
     P2pMessageAnounce peers -> do
-             liftIO $ putStrLn $ "new peers " ++ show peers
+             liftIO $ logTrace $ "new peers " ++ show peers
              liftIO $ atomically $ do
                                  oldPeers <- readTVar $ p2pPeers p2p
                                  writeTVar (p2pPeers p2p) $ Set.union peers oldPeers
                                  return ()
     P2pMessagePayload userMsg -> do
---             liftIO $ putStrLn $ "new payload " 
              -- TODO: check do we have bloody peer
              peer <- fromJust <$> clientStatePeer <$> State.get
              liftIO $ atomically $ writeTChan (p2pRecvChan p2p)
@@ -211,7 +211,7 @@ clientSendLoop sock peerAddr p2p = do
                    clientSendLoop sock peerAddr p2p)
                (\e -> do
                   Sock.close sock
-                  putStrLn $ "killing peer connection at addr" ++ (show peerAddr)
+                  logInfo $ "killing peer connection at addr" ++ (show peerAddr)
                                ++ "catched" ++ show (e :: Exception.IOException)
                   killPeer peerAddr p2p
                   return ()
@@ -219,7 +219,7 @@ clientSendLoop sock peerAddr p2p = do
                     
 handlePeer :: Sock.Socket -> Sock.SockAddr -> P2p -> IO ()
 handlePeer sock addr p2p = do
-  putStrLn $ "got peer from addr"  ++ show addr
+  logInfo $ "got peer from addr"  ++ show addr
   recvThread <- forkIO $ do
     State.evalStateT (clientRecvLoop sock addr p2p)
              (P2pClientState (BinGet.runGetIncremental msgDecoder) Nothing)
@@ -235,7 +235,7 @@ serverMainLoop sock p2p =
               handlePeer conn addr p2p
               return ()
       else do
-        putStrLn "dropping the connection as we already at top of connecte peers"
+        logInfo "dropping the connection as we already at top of connecte peers"
         Sock.close conn
         return ()
 
@@ -257,7 +257,7 @@ peerAddressToSockAddr (PeerAddress host port) =
 
 reconnectPeer :: P2p -> PeerAddress -> IO ()
 reconnectPeer p2p peerAddress = do
-      putStrLn $ "reconnecting peer" ++ show peerAddress
+      logDebug $ "reconnecting peer" ++ show peerAddress
       proceed <- atomically $ do
                    isConnecting <- Set.member peerAddress <$> readTVar (p2pConnectingPeers p2p)
                    isConnected <- Set.member peerAddress <$> readTVar (p2pConnectedPeers p2p)
@@ -270,7 +270,7 @@ reconnectPeer p2p peerAddress = do
                      return True
       if not proceed
       then do
-          putStrLn $ "already connecting to " ++ show peerAddress
+          logDebug $ "already connecting to " ++ show peerAddress
           return()
       else do
         let removeFromConnecting = do
@@ -281,7 +281,7 @@ reconnectPeer p2p peerAddress = do
                          do
                            Sock.connect sock $ peerAddressToSockAddr peerAddress
                            SBS.send sock $ encodeMsg $ P2pMessageHello $ p2pConfigBindAddress $ p2pConfig p2p
-                           putStrLn $ "connected to " ++ show peerAddress
+                           logInfo $ "connected to " ++ show peerAddress
         case success of
           Right _ -> do
 
@@ -293,7 +293,7 @@ reconnectPeer p2p peerAddress = do
              return ()
           Left err -> do
              Sock.close sock          
-             putStrLn $  "connect failed to " ++ show peerAddress
+             logDebug $  "connect failed to " ++ show peerAddress
                           ++ "; err: " ++ show (err::Exception.IOException)
              atomically removeFromConnecting
 

@@ -5,6 +5,7 @@ module Bce.Networking where
 import qualified Bce.BlockChain as BlockChain
 import qualified Bce.DbFs as Db
 import qualified Bce.P2p as P2p
+import Bce.Logger    
 import Bce.Hash
 import Bce.BlockChainHash
 import Bce.Util
@@ -49,10 +50,10 @@ decodeMessage bs = BinGet.runGet Bin.get $ BSL.fromStrict bs
 handlePeerMessage :: Network -> PeerAddress -> NetworkMessage -> IO ()
 handlePeerMessage net peer msg = do
     let db = networkDb net
---    putStrLn $ "got message " ++ show msg
+    logDebug $ "got message " ++ show msg
     case msg of
       Brag braggedLen -> do
---               putStrLn $ "saw bragger with length!" ++ show braggedLen
+               logDebug $ "saw bragger with length!" ++ show braggedLen
                (dbLen, topBlock) <- Db.getLongestHead db
                if dbLen < braggedLen
                then send net peer $ Ask $ hash topBlock
@@ -63,7 +64,7 @@ handlePeerMessage net peer msg = do
                  Just blocks -> send net peer $ Propose blocks
                  Nothing -> send net peer $ Dunno fromHash
       Propose blocks -> do
-        putStrLn $ "pushing blocks to chain" ++ show (length blocks)
+        logDebug $ "pushing blocks to chain" ++ show (length blocks)
         Db.pushBlocks (networkDb net) blocks
       Dunno fromHash -> do
                prevBlockOpt <- Db.getBlock db fromHash
@@ -84,7 +85,6 @@ networkListener net = do
               P2p.PeerDisconnected peer -> do
                         return ()
               P2p.PeerMessage peer bs -> do
---                  putStrLn $ "got message of length " ++ (show (BS.length bs))
                   handlePeerMessage net peer $ decodeMessage bs
             loop
       loop
@@ -94,7 +94,7 @@ bragger net =
     let loop = do
           threadDelay (secondsToMicroseconds $ 5)
           (length, _) <- Db.getLongestHead (networkDb net)
---          putStrLn $ "bragging with length of " ++ show length
+          logTrace $ "bragging with length of " ++ show length
           broadcast net $ Brag length
           loop
     in loop
