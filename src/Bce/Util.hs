@@ -38,3 +38,9 @@ secondsToMicroseconds x = x * 1000000
 
 andM :: (Monad m, Traversable t) => t (m Bool) -> m Bool
 andM xs = and <$> sequence xs
+
+liftMaybe :: (MonadPlus m) => Maybe a -> m a
+liftMaybe = maybe mzero return
+          
+at :: [a] -> Int -> Maybe a
+at xs idx = lookup idx (zip [0..] xs)

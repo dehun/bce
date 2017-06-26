@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 module Bce.DbFs
     ( initDb
     , loadDb
@@ -23,14 +24,18 @@ import Bce.Difficulity
 import Bce.Util
 import Bce.Logger
 
-
+import GHC.Generics (Generic)
+import GHC.Int(Int64, Int32)
 import Data.IORef
 import System.IO
 import System.Directory    
 import Data.Default
 import Data.Maybe
-import Data.Either    
-import Control.Monad.Trans.Either    
+import Data.Either
+import Control.Monad
+import Control.Monad.Trans
+import Control.Monad.Trans.Either
+import Control.Monad.Trans.Maybe        
 import Data.List
 import Data.Ord    
 import Control.Monad.IO.Class (liftIO)
@@ -75,10 +80,8 @@ initDb dataDir =  do
              (LevelDb.defaultOptions { LevelDb.createIfMissing = True })
   blocksIndexDb <- LevelDb.open (dataDir ++ "/blocks.db")
                   (LevelDb.defaultOptions { LevelDb.createIfMissing = True })
-
   withBinaryFile (blockPath dataDir $ hash initialBlock) WriteMode
                    $ (\h -> BSL.hPut h (BinPut.runPut $ Bin.put initialBlock))
-  
   startHead <- ChainHead (blockHeader initialBlock) 1 (hash initialBlock) <$> now
   Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
          <*> pure blocksIndexDb <*> newIORef (Set.fromList [startHead]) <*> newIORef Set.empty
@@ -167,23 +170,62 @@ verifyBlockDifficulity db block = do
 blocksForTimeAveraging = 10                         
 verifyBlockTimestamp db block = do
   let blockTimestamp  = bhWallClockTime . blockHeader
-  avgTime <- liftIO $ median <$> map blockTimestamp <$> lastNBlocks db blocksForTimeAveraging
-  guard (blockTimestamp block > avgTime) `mplus` left ""
+  lastBlocks <- liftIO $ lastNBlocks db blocksForTimeAveraging
+  case lastBlocks of
+    [] -> return ()
+    _ -> do
+      let avgTime = median $ map blockTimestamp lastBlocks
+      guard (blockTimestamp block >= avgTime) `mplus` left "block timestamp is incorrect, less than last avg"
 
 
--- TODO: implement me        
-verifyBlockTransactions db block =  return ()
+isCoinbaseTransaction :: Transaction -> Bool    
+isCoinbaseTransaction (CoinbaseTransaction _) = True
+isCoinbaseTransaction _ = False
 
--- TODO: implement me                                    
-verifyBlockHasCorrectCoinbaseTransaction db block = return ()
+resolveInputOutput :: Db -> TxInput -> IO (Maybe TxOutput)
+resolveInputOutput db (TxInput (TxOutputRef refTxId refOutputIdx)) =
+    runMaybeT $ do
+      refTx <- MaybeT $ getDbTransaction db refTxId
+      liftMaybe $ (txOutputs refTx) `at` (fromIntegral refOutputIdx)                          
 
+transactionFee :: Db -> Block -> Transaction -> IO Int64
+transactionFee _ _ (CoinbaseTransaction _) = return 0
+transactionFee db block (Transaction inputs outputs _) = do
+    let totalOutput = sum $ map outputAmount outputs
+    totalInput <- sum <$> map (outputAmount . fromJust) <$> mapM (resolveInputOutput db) inputs
+    return $ totalInput - totalOutput
+                          
+maxCoinbaseReward :: Db -> Block -> IO Int64
+maxCoinbaseReward db block = do
+  fees <- mapM (transactionFee db block) (blockTransactions block)
+  let baseReward = 50
+  return $ (sum fees) + baseReward
+
+
+verifyTransaction db block tx = 
+  case tx of
+    CoinbaseTransaction outputs -> do
+            guard (onlyOne isCoinbaseTransaction $ blockTransactions block)
+                      `mplus` left "more than one coinbase per block"
+            guard (1 == length outputs)
+                      `mplus` left "more than one output in coinbase transaction"
+            expectedCoinbaseReward <- liftIO $ maxCoinbaseReward db block
+            guard ((outputAmount $ head $ txOutputs tx) == expectedCoinbaseReward)
+                      `mplus` left "coinbase reward is wrong"
+    Transaction inputs outputs sig -> do
+            return ()
+
+
+verifyBlockTransactions db block = do
+  let txs = blockTransactions block
+  guard (hash txs == bhTransactionsHash (blockHeader block)) `mplus` left "wrong stamped transactions hash"
+  mapM_ (verifyTransaction db block) txs
 
 verifyBlock :: Db -> Block -> EitherT String IO [()]
 verifyBlock db block = do
     sequence [ verifyPrevBlockHashCorrect db block
              , verifyBlockDifficulity db block
              , verifyBlockTimestamp db block
-             , verifyBlockHasCorrectCoinbaseTransaction db block
              , verifyBlockTransactions db block]
 
 
@@ -290,7 +332,18 @@ pushTransactions db newTransactions = Lock.with (dbLock db) $ do
                         writeIORef (dbTransactions db) (Set.union oldTransactions newTransactions)
 
 
---                                    
+data TransactionRef = TransactionRef { txrefBlock :: Hash
+                                     , txrefIdx :: Int32} deriving (Show, Eq, Generic)
+instance Bin.Binary TransactionRef
+
+
+getDbTransaction :: Db -> Hash -> IO (Maybe Transaction)
+getDbTransaction db txHash =
+  runMaybeT $ do
+    txBin <- MaybeT $ liftIO $ LevelDb.get (dbBlocksIndex db) def (hashBs txHash)
+    let txref = BinGet.runGet Bin.get (BSL.fromStrict txBin) :: TransactionRef
+    block <- MaybeT $  loadBlockFromDisk db (txrefBlock txref)
+    liftMaybe $ (blockTransactions block) `at` (fromIntegral $ txrefIdx txref)
 
 
 lastNBlocks :: Db -> Int -> IO [Block]
@@ -305,6 +358,7 @@ lastNBlocks db n = do
                      let nxt = bhPrevBlockHeaderHash $ blockHeader block
                      continue nxt (k -1) (block:bs)
   continue start n []
+
 
 getNextDifficulity :: Db -> IO Difficulity           
 getNextDifficulity db = Lock.with (dbLock db) $ getNextDifficulityNoLock db

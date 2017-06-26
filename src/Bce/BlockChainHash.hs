@@ -29,8 +29,7 @@ instance Hashable BlockHeader where
 instance Hashable Transaction where
     hash (CoinbaseTransaction outputs) = hash $ mconcat $ map (\o -> hashBs $ hash  o) outputs
     hash (Transaction inputs outputs sig) = hash $ mconcat [ mconcat $ map (\i -> hashBs $ hash i) inputs
-                                                      , mconcat $ map (\o -> hashBs $ hash o) outputs
-                                                      , hashBs sig ]
+                                                           , mconcat $ map (\o -> hashBs $ hash o) outputs ]
                                               
 instance Hashable TxOutput where
     hash (TxOutput amount pubkey) = hash $ mconcat [hashBs $ hash amount, hashBs $ hash pubkey ] 

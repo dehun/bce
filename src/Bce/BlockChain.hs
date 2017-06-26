@@ -31,7 +31,7 @@ data Transaction =
   | Transaction {
       txInputs :: [TxInput]
     , txOutputs :: [TxOutput]
-    , txSignature :: Hash } deriving (Show, Eq, Generic)
+    , txSignature :: Signature } deriving (Show, Eq, Generic)
 
 
 data BlockHeader = BlockHeader {
@@ -47,3 +47,6 @@ data Block = Block { blockHeader:: BlockHeader
 
 data BlockChain = BlockChain { blockChainBlocks :: [Block] } deriving (Show, Eq, Generic)
 
+
+
+                

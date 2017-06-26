@@ -17,8 +17,8 @@ isCoinbaseTransaction _ = False
 
 blockTimestamp = bhWallClockTime . blockHeader
 
-blocksForTimeAveraging = 10                 
-                          
+
+blocksForTimeAveraging = 10                                                   
 verifyBlockChain :: BlockChain -> Bool
 verifyBlockChain (BlockChain blocks) =
     and [ prevBlockHashesCorrect
