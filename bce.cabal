@@ -77,6 +77,8 @@ executable bce
                          transformers,
                          word8,
                          either
+                         -- aeson,
+                         -- spock
     hs-source-dirs: src/bceapp
     default-language:    Haskell2010
 

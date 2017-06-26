@@ -64,7 +64,7 @@ data Db = Db {
     , dbTxIndex :: LevelDb.DB
     , dbBlocksIndex :: LevelDb.DB
     , dbHeads :: IORef (Set.Set ChainHead)
-    , dbTransactions :: IORef [Transaction]
+    , dbTransactions :: IORef (Set.Set Transaction)
       }
 
 
@@ -81,7 +81,7 @@ initDb dataDir =  do
   
   startHead <- ChainHead (blockHeader initialBlock) 1 (hash initialBlock) <$> now
   Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
-         <*> pure blocksIndexDb <*> newIORef (Set.fromList [startHead]) <*> newIORef []
+         <*> pure blocksIndexDb <*> newIORef (Set.fromList [startHead]) <*> newIORef Set.empty
 
 
 nextBlocks :: Db -> Hash -> IO (Set.Set Hash)
@@ -121,7 +121,7 @@ loadBlockFromDisk db blockHash =
                                               return $ Just $ BinGet.runGet Bin.get content)
                     ) (\e -> do
                          let err = show (e :: Exception.IOException)
-                         logTrace $ "error occured on block loading" ++ err
+                         logTrace $ "error occured on block loading " ++ err
                          return Nothing
                       )
 
@@ -161,13 +161,30 @@ verifyBlockDifficulity db block = do
   let actualDifficulity = blockDifficulity block
   let stampedDifficulity = fromIntegral $ bhDifficulity $ blockHeader block
   guard (stampedDifficulity == expectedDifficulity) `mplus` left "wrong stamped difficulity"
-  guard (actualDifficulity >= expectedDifficulity) `mplus` left "wrong difficulity" 
+  guard (actualDifficulity >= expectedDifficulity) `mplus` left "wrong difficulity"
+
+
+blocksForTimeAveraging = 10                         
+verifyBlockTimestamp db block = do
+  let blockTimestamp  = bhWallClockTime . blockHeader
+  avgTime <- liftIO $ median <$> map blockTimestamp <$> lastNBlocks db blocksForTimeAveraging
+  guard (blockTimestamp block > avgTime) `mplus` left ""
+
+
+-- TODO: implement me        
+verifyBlockTransactions db block =  return ()
+
+-- TODO: implement me                                    
+verifyBlockHasCorrectCoinbaseTransaction db block = return ()
 
 
 verifyBlock :: Db -> Block -> EitherT String IO [()]
 verifyBlock db block = do
     sequence [ verifyPrevBlockHashCorrect db block
-             , verifyBlockDifficulity db block ]
+             , verifyBlockDifficulity db block
+             , verifyBlockTimestamp db block
+             , verifyBlockHasCorrectCoinbaseTransaction db block
+             , verifyBlockTransactions db block]
 
 
 --- end of verification, move is somewhere elso!
@@ -262,15 +279,15 @@ getBlocksToHash db toHash amount
      
     
 -- txs!
-getTransactions :: Db -> IO [Transaction]
+getTransactions :: Db -> IO (Set.Set Transaction)
 getTransactions db = Lock.with (dbLock db) $ do
                        readIORef $ dbTransactions db
 
 
-pushTransactions :: Db -> [Transaction] -> IO ()
+pushTransactions :: Db -> Set.Set Transaction -> IO ()
 pushTransactions db newTransactions = Lock.with (dbLock db) $ do
                         oldTransactions <- readIORef (dbTransactions db)
-                        writeIORef (dbTransactions db) (oldTransactions ++ newTransactions)
+                        writeIORef (dbTransactions db) (Set.union oldTransactions newTransactions)
 
 
 --                                    

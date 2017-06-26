@@ -9,7 +9,8 @@ import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BSL    
 import qualified Data.ByteString.Lazy.Builder as BSB    
 import qualified Data.ByteString.Base16 as B16
-import GHC.Int(Int64, Int32)    
+import GHC.Int(Int64, Int32)
+import Data.Ord    
 
 instance Hashable Block where
     hash (Block header txs) = hash header
@@ -42,3 +43,7 @@ instance Hashable TxOutputRef where
 
 instance Hashable [Transaction] where
     hash txs = hash $ mconcat $ map (hashBs . hash) txs
+
+
+instance Ord Transaction where
+    compare = comparing hash

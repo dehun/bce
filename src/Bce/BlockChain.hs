@@ -33,6 +33,7 @@ data Transaction =
     , txOutputs :: [TxOutput]
     , txSignature :: Hash } deriving (Show, Eq, Generic)
 
+
 data BlockHeader = BlockHeader {
       bhTransactionsHash :: Hash
     , bhPrevBlockHeaderHash :: Hash

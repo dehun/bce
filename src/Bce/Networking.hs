@@ -13,6 +13,7 @@ import Bce.TimeStamp
 import Bce.BlockChainSerialization    
 
 import qualified Data.Binary as Bin
+import qualified Data.Set as Set    
 import GHC.Generics (Generic)
 import qualified Data.Binary.Get as BinGet
 import qualified Data.Binary.Put as BinPut
@@ -34,7 +35,7 @@ data NetworkMessage = Brag Int
                     | Ask Hash
                     | Propose [BlockChain.Block]
                     | Dunno Hash
-                    | PushTransactions [BlockChain.Transaction]
+                    | PushTransactions (Set.Set BlockChain.Transaction)
                       deriving (Show, Generic)
 instance Bin.Binary NetworkMessage    
                                

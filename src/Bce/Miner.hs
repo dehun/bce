@@ -16,6 +16,7 @@ import Debug.Trace
 import GHC.Int (Int64)
 import System.Random    
 
+import qualified Data.Set as Set    
 import Control.Monad
 import Control.Concurrent    
 import Control.Concurrent.STM    
@@ -35,22 +36,22 @@ tryGenerateBlock time rnd prevBlock txs target = do
   else Nothing
     
 
-coinbaseTransaction :: [Transaction] -> Transaction
+coinbaseTransaction :: Set.Set Transaction -> Transaction
 coinbaseTransaction txs =
     CoinbaseTransaction [TxOutput 50 ""]
 
+-- TODO: split that forever with actual mining
+-- TODO: split mining into finding block and pushing it to db
 growChain :: Db.Db -> Timer -> IO ()
 growChain db timer = do
---  blocksChan <- atomically $ Db.subscribeToDbBlocks db
---  txChan <- Db.subscribeToDbTransactions db
   forever $ do
     time <- timer
     rnd <- randomIO :: IO Int64
     generated <- do
       cbtx <- coinbaseTransaction <$> Db.getTransactions db
-      txs <- (:) cbtx <$> Db.getTransactions db
+      txs <- Set.insert cbtx <$> Db.getTransactions db
       (_, topBlock) <- Db.getLongestHead db
-      next <- tryGenerateBlock time rnd <$> pure topBlock <*> pure txs <*> Db.getNextDifficulity db
+      next <- tryGenerateBlock time rnd <$> pure topBlock <*> pure (Set.toList txs)  <*> Db.getNextDifficulity db
       case next of
         Just blk -> Db.pushBlock db blk
         Nothing -> return False
