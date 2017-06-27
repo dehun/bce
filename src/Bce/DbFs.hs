@@ -140,7 +140,6 @@ pushBlockToDisk db block = do
     LevelDb.put (dbBlocksIndex db) def (hashBs prevBlockHash)
                (BSL.toStrict $ BinPut.runPut $ Bin.put newNextBlocks)
     mapM_ (\tx -> pushDbTransaction db tx block) $ blockTransactions block
-    -- TODO: transactions index!
 
 
 chainLength :: Db -> Hash -> IO Int
