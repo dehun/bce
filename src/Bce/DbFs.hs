@@ -23,6 +23,7 @@ import Bce.TimeStamp
 import Bce.Difficulity    
 import Bce.Util
 import Bce.Logger
+import Bce.Crypto    
 
 import GHC.Generics (Generic)
 import GHC.Int(Int64, Int32)
@@ -188,19 +189,36 @@ resolveInputOutput db (TxInput (TxOutputRef refTxId refOutputIdx)) =
       refTx <- MaybeT $ getDbTransaction db refTxId
       liftMaybe $ (txOutputs refTx) `at` (fromIntegral refOutputIdx)                          
 
-transactionFee :: Db -> Block -> Transaction -> IO Int64
-transactionFee _ _ (CoinbaseTransaction _) = return 0
-transactionFee db block (Transaction inputs outputs _) = do
-    let totalOutput = sum $ map outputAmount outputs
-    totalInput <- sum <$> map (outputAmount . fromJust) <$> mapM (resolveInputOutput db) inputs
-    return $ totalInput - totalOutput
-                          
-maxCoinbaseReward :: Db -> Block -> IO Int64
-maxCoinbaseReward db block = do
-  fees <- mapM (transactionFee db block) (blockTransactions block)
-  let baseReward = 50
-  return $ (sum fees) + baseReward
 
+transactionFee :: Db -> Transaction -> IO (Maybe Int64)
+transactionFee _ (CoinbaseTransaction _) = return $ Just 0
+transactionFee db (Transaction inputs outputs _) = runMaybeT $ do
+    let totalOutput = sum $ map outputAmount outputs
+    inputOutputs <- liftIO $ mapM (resolveInputOutput db) inputs
+    totalInput <- liftMaybe $ sum <$> map outputAmount <$> (sequence inputOutputs)
+    return $ totalInput - totalOutput
+
+                          
+maxCoinbaseReward :: Db -> [Transaction] -> IO (Maybe Int64)
+maxCoinbaseReward db txs = runMaybeT $ do
+  feesOpt <- liftIO $ mapM (transactionFee db) txs
+  fees <- liftMaybe $ sequence feesOpt 
+  let baseReward = 50
+  return $ baseReward + sum fees
+
+
+verifyTransactionSignature db block tx =
+    case tx of
+      Transaction inputs outputs sig -> do
+              inputOutputsOptSeq <- liftIO $ mapM (resolveInputOutput db) inputs
+              let inputOutputsOpt = sequence inputOutputsOptSeq
+              guard (isJust inputOutputsOpt)
+                        `mplus` left "can not resolve input's output for transaction"
+              let inputOutputs = fromJust inputOutputsOpt
+              let pubKey = outputPubKey $ head inputOutputs
+              guard (all (\o -> pubKey == outputPubKey o) inputOutputs)
+                        `mplus` left "all input pub keys should match"
+              guard (verifySignature sig pubKey (hash tx)) `mplus` left "transaction signature is incorrect"
 
 verifyTransaction db block tx = 
   case tx of
@@ -209,10 +227,17 @@ verifyTransaction db block tx =
                       `mplus` left "more than one coinbase per block"
             guard (1 == length outputs)
                       `mplus` left "more than one output in coinbase transaction"
-            expectedCoinbaseReward <- liftIO $ maxCoinbaseReward db block
-            guard ((outputAmount $ head $ txOutputs tx) == expectedCoinbaseReward)
-                      `mplus` left "coinbase reward is wrong"
+            expectedCoinbaseReward <- liftIO $ maxCoinbaseReward db (blockTransactions block)
+            guard (isJust expectedCoinbaseReward) `mplus` left "can not calculate or wrong coinbase reward"
+            guard ((outputAmount $ head $ txOutputs tx) == fromJust expectedCoinbaseReward)
+                      `mplus` left "coinbase reward is incorrectly stamped"
     Transaction inputs outputs sig -> do
+            fee <- liftIO $ transactionFee db tx
+            guard (isJust fee) `mplus` left "transaction fee can not be calculated (absent input?)"
+            guard (fromJust fee >= 0) `mplus` left "transaction fee is below zero"
+            guard (length inputs > 0) `mplus` left "there are should be at least one transaction input"
+            guard (length outputs > 0) `mplus` left "there are should be at least one transaction output"
+            verifyTransactionSignature db block tx
             return ()
 
 

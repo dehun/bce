@@ -19,7 +19,8 @@ import System.Random
 import qualified Data.Set as Set    
 import Control.Monad
 import Control.Concurrent    
-import Control.Concurrent.STM    
+import Control.Concurrent.STM
+import qualified Data.ByteString as BS
 
 
 tryGenerateBlock :: TimeStamp -> Int64 -> Block -> [Transaction] -> Difficulity -> Maybe Block
@@ -38,7 +39,8 @@ tryGenerateBlock time rnd prevBlock txs target = do
 
 coinbaseTransaction :: Set.Set Transaction -> Transaction
 coinbaseTransaction txs =
-    CoinbaseTransaction [TxOutput 50 ""]
+    -- TODO: calculate properly!
+    CoinbaseTransaction [TxOutput 50 BS.empty]
 
 -- TODO: split that forever with actual mining
 -- TODO: split mining into finding block and pushing it to db

@@ -4,13 +4,14 @@ import Bce.Hash
 
 import qualified Data.ByteString as BS
 
-type PubKey = String
+type PubKey = BS.ByteString
+type PrivKey = BS.ByteString    
 
 type Signature = BS.ByteString    
 
 -- TODO: implement me
-sign :: Hash -> Signature
-sign h = hashBs h
+sign :: Hash -> PrivKey -> Signature
+sign h k = hashBs h
 
-verifySignature :: Signature -> Hash -> Bool
-verifySignature s h = s == hashBs h
+verifySignature :: Signature -> PubKey -> Hash -> Bool
+verifySignature s p h = s == hashBs h
