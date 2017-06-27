@@ -37,13 +37,11 @@ library
     exposed-modules: Bce.BlockChain
                    , Bce.Hash
                    , Bce.BlockChainHash
-                   , Bce.BlockChainVerification
                    , Bce.BlockChainSerialization
                    , Bce.Difficulity
                    , Bce.Util
                    , Bce.InitialBlock                   
                    , Bce.Crypto
-                   , Bce.Db
                    , Bce.P2p
                    , Bce.Networking
                    , Bce.Miner

@@ -10,7 +10,8 @@ module Bce.DbFs
     , Db
     , getTransactions
     , pushTransactions
-    , getNextDifficulity)
+    , getNextDifficulity
+    , maxCoinbaseReward)
         where
 
 
@@ -187,20 +188,24 @@ resolveInputOutput :: Db -> TxInput -> IO (Maybe TxOutput)
 resolveInputOutput db (TxInput (TxOutputRef refTxId refOutputIdx)) =
     runMaybeT $ do
       refTx <- MaybeT $ getDbTransaction db refTxId
-      liftMaybe $ (txOutputs refTx) `at` (fromIntegral refOutputIdx)                          
+      liftMaybe $ (Set.toAscList $ txOutputs refTx) `at` (fromIntegral refOutputIdx)                          
 
 
 transactionFee :: Db -> Transaction -> IO (Maybe Int64)
 transactionFee _ (CoinbaseTransaction _) = return $ Just 0
 transactionFee db (Transaction inputs outputs _) = runMaybeT $ do
-    let totalOutput = sum $ map outputAmount outputs
-    inputOutputs <- liftIO $ mapM (resolveInputOutput db) inputs
+    let totalOutput = sum $ Set.map outputAmount outputs
+    inputOutputs <- liftIO $ mapM (resolveInputOutput db) (Set.toList inputs)
     totalInput <- liftMaybe $ sum <$> map outputAmount <$> (sequence inputOutputs)
     return $ totalInput - totalOutput
 
-                          
+
 maxCoinbaseReward :: Db -> [Transaction] -> IO (Maybe Int64)
-maxCoinbaseReward db txs = runMaybeT $ do
+maxCoinbaseReward db txs = Lock.with (dbLock db) $ maxCoinbaseRewardNoLock db txs
+           
+                          
+maxCoinbaseRewardNoLock :: Db -> [Transaction] -> IO (Maybe Int64)
+maxCoinbaseRewardNoLock db txs = runMaybeT $ do
   feesOpt <- liftIO $ mapM (transactionFee db) txs
   fees <- liftMaybe $ sequence feesOpt 
   let baseReward = 50
@@ -210,7 +215,7 @@ maxCoinbaseReward db txs = runMaybeT $ do
 verifyTransactionSignature db block tx =
     case tx of
       Transaction inputs outputs sig -> do
-              inputOutputsOptSeq <- liftIO $ mapM (resolveInputOutput db) inputs
+              inputOutputsOptSeq <- liftIO $ mapM (resolveInputOutput db) (Set.toList inputs)
               let inputOutputsOpt = sequence inputOutputsOptSeq
               guard (isJust inputOutputsOpt)
                         `mplus` left "can not resolve input's output for transaction"
@@ -223,13 +228,13 @@ verifyTransactionSignature db block tx =
 verifyTransaction db block tx = 
   case tx of
     CoinbaseTransaction outputs -> do
-            guard (onlyOne isCoinbaseTransaction $ blockTransactions block)
+            guard (onlyOne isCoinbaseTransaction $ Set.toAscList $ blockTransactions block)
                       `mplus` left "more than one coinbase per block"
             guard (1 == length outputs)
                       `mplus` left "more than one output in coinbase transaction"
-            expectedCoinbaseReward <- liftIO $ maxCoinbaseReward db (blockTransactions block)
+            expectedCoinbaseReward <- liftIO $ maxCoinbaseRewardNoLock db (Set.toList $ blockTransactions block)
             guard (isJust expectedCoinbaseReward) `mplus` left "can not calculate or wrong coinbase reward"
-            guard ((outputAmount $ head $ txOutputs tx) == fromJust expectedCoinbaseReward)
+            guard ((outputAmount $ head $ Set.toList $ outputs) == fromJust expectedCoinbaseReward)
                       `mplus` left "coinbase reward is incorrectly stamped"
     Transaction inputs outputs sig -> do
             fee <- liftIO $ transactionFee db tx
@@ -238,8 +243,6 @@ verifyTransaction db block tx =
             guard (length inputs > 0) `mplus` left "there are should be at least one transaction input"
             guard (length outputs > 0) `mplus` left "there are should be at least one transaction output"
             verifyTransactionSignature db block tx
-            return ()
-
 
 verifyBlockTransactions db block = do
   let txs = blockTransactions block
@@ -368,7 +371,7 @@ getDbTransaction db txHash =
     txBin <- MaybeT $ liftIO $ LevelDb.get (dbBlocksIndex db) def (hashBs txHash)
     let txref = BinGet.runGet Bin.get (BSL.fromStrict txBin) :: TransactionRef
     block <- MaybeT $  loadBlockFromDisk db (txrefBlock txref)
-    liftMaybe $ (blockTransactions block) `at` (fromIntegral $ txrefIdx txref)
+    liftMaybe $ (Set.toList $ blockTransactions block) `at` (fromIntegral $ txrefIdx txref)
 
 
 lastNBlocks :: Db -> Int -> IO [Block]

@@ -4,7 +4,6 @@ import Bce.Crypto
 import Bce.Hash
 import Bce.BlockChain
 import Bce.BlockChainHash    
-import Bce.BlockChainVerification
 import Bce.InitialBlock
 import Bce.Difficulity
 import Bce.TimeStamp
@@ -23,7 +22,7 @@ import Control.Concurrent.STM
 import qualified Data.ByteString as BS
 
 
-tryGenerateBlock :: TimeStamp -> Int64 -> Block -> [Transaction] -> Difficulity -> Maybe Block
+tryGenerateBlock :: TimeStamp -> Int64 -> Block -> Set.Set Transaction -> Difficulity -> Maybe Block
 tryGenerateBlock time rnd prevBlock txs target = do
   let header = BlockHeader
                  (hash txs)
@@ -37,10 +36,10 @@ tryGenerateBlock time rnd prevBlock txs target = do
   else Nothing
     
 
-coinbaseTransaction :: Set.Set Transaction -> Transaction
-coinbaseTransaction txs =
-    -- TODO: calculate properly!
-    CoinbaseTransaction [TxOutput 50 BS.empty]
+coinbaseTransaction :: Db.Db -> Set.Set Transaction -> IO Transaction
+coinbaseTransaction db txs = do
+    Just maxReward <- Db.maxCoinbaseReward db (Set.toList txs)
+    return $ CoinbaseTransaction $ Set.fromList [TxOutput maxReward BS.empty]
 
 -- TODO: split that forever with actual mining
 -- TODO: split mining into finding block and pushing it to db
@@ -50,10 +49,11 @@ growChain db timer = do
     time <- timer
     rnd <- randomIO :: IO Int64
     generated <- do
-      cbtx <- coinbaseTransaction <$> Db.getTransactions db
+      rtxs <- Db.getTransactions db              
+      cbtx <- coinbaseTransaction db rtxs
       txs <- Set.insert cbtx <$> Db.getTransactions db
       (_, topBlock) <- Db.getLongestHead db
-      next <- tryGenerateBlock time rnd <$> pure topBlock <*> pure (Set.toList txs)  <*> Db.getNextDifficulity db
+      next <- tryGenerateBlock time rnd <$> pure topBlock <*> pure txs  <*> Db.getNextDifficulity db
       case next of
         Just blk -> Db.pushBlock db blk
         Nothing -> return False

@@ -10,6 +10,7 @@ import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Lazy.Builder as BSB    
 import qualified Data.ByteString.Base16 as B16
 import GHC.Int(Int64, Int32)
+import qualified Data.Set as Set    
 import Data.Ord    
 
 instance Hashable Block where
@@ -27,9 +28,10 @@ instance Hashable BlockHeader where
                        int64ToBs nonce, int64ToBs wallclock, int32ToBs difficulity])
 
 instance Hashable Transaction where
-    hash (CoinbaseTransaction outputs) = hash $ mconcat $ map (\o -> hashBs $ hash  o) outputs
-    hash (Transaction inputs outputs sig) = hash $ mconcat [ mconcat $ map (\i -> hashBs $ hash i) inputs
-                                                           , mconcat $ map (\o -> hashBs $ hash o) outputs ]
+    hash (CoinbaseTransaction outputs) = hash $ mconcat $ map (\o -> hashBs $ hash  o) (Set.toList outputs)
+    hash (Transaction inputs outputs sig) =
+        hash $ mconcat [ mconcat $ map (\i -> hashBs $ hash i) (Set.toList inputs)
+                       , mconcat $ map (\o -> hashBs $ hash o) (Set.toList outputs) ]
                                               
 instance Hashable TxOutput where
     hash (TxOutput amount pubkey) = hash $ mconcat [hashBs $ hash amount, hashBs $ hash pubkey ] 
@@ -40,9 +42,15 @@ instance Hashable TxInput where
 instance Hashable TxOutputRef where
     hash (TxOutputRef txId outputIdx) = hash $ mconcat [hashBs txId, int32ToBs outputIdx]
 
-instance Hashable [Transaction] where
-    hash txs = hash $ mconcat $ map (hashBs . hash) txs
+instance Hashable (Set.Set Transaction) where
+    hash txs = hash $ mconcat $ map (hashBs . hash) (Set.toAscList txs)
 
 
 instance Ord Transaction where
-    compare = comparing hash
+    compare = comparing show
+
+instance Ord TxOutput where
+    compare = comparing show
+
+instance Ord TxInput where
+    compare = comparing show              

@@ -7,11 +7,9 @@ import Bce.Hash
 import Bce.TimeStamp
 
 import Data.Maybe
-import qualified Data.List as DList
+import qualified Data.Set as Set
 import GHC.Int(Int64, Int32)
 import GHC.Generics (Generic)
-
-
 
 data TxOutput = TxOutput { outputAmount :: Int64
                          , outputPubKey :: PubKey
@@ -27,10 +25,10 @@ data TxInput = TxInput { inputOutputRef :: TxOutputRef } deriving (Show, Eq, Gen
 
 data Transaction =
     CoinbaseTransaction {
-    txOutputs :: [TxOutput] }
+    txOutputs :: Set.Set TxOutput }
   | Transaction {
-      txInputs :: [TxInput]
-    , txOutputs :: [TxOutput]
+      txInputs :: Set.Set TxInput
+    , txOutputs :: Set.Set TxOutput
     , txSignature :: Signature } deriving (Show, Eq, Generic)
 
 
@@ -43,7 +41,7 @@ data BlockHeader = BlockHeader {
     } deriving (Show, Eq, Generic)
 
 data Block = Block { blockHeader:: BlockHeader
-                   , blockTransactions :: [Transaction] } deriving (Show, Eq, Generic)
+                   , blockTransactions :: Set.Set Transaction } deriving (Show, Eq, Generic)
 
 data BlockChain = BlockChain { blockChainBlocks :: [Block] } deriving (Show, Eq, Generic)
 
