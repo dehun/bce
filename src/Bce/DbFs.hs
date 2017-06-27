@@ -139,6 +139,7 @@ pushBlockToDisk db block = do
     newNextBlocks <- Set.insert (hash block) <$> nextBlocks db prevBlockHash
     LevelDb.put (dbBlocksIndex db) def (hashBs prevBlockHash)
                (BSL.toStrict $ BinPut.runPut $ Bin.put newNextBlocks)
+    mapM_ (\tx -> pushDbTransaction db tx block) $ blockTransactions block
     -- TODO: transactions index!
 
 
@@ -273,6 +274,7 @@ consumeTransactions db block = do
   oldTxs <- readIORef (dbTransactions db)
   let newTxs = Set.difference oldTxs (blockTransactions block)
   writeIORef (dbTransactions db) newTxs
+
                        
 pushBlockNoLock :: Db -> Block -> IO Bool
 pushBlockNoLock db block = do
@@ -376,10 +378,15 @@ instance Bin.Binary TransactionRef
 getDbTransaction :: Db -> Hash -> IO (Maybe Transaction)
 getDbTransaction db txHash =
   runMaybeT $ do
-    txBin <- MaybeT $ liftIO $ LevelDb.get (dbBlocksIndex db) def (hashBs txHash)
+    txBin <- MaybeT $ liftIO $ LevelDb.get (dbTxIndex db) def (hashBs txHash)
     let txref = BinGet.runGet Bin.get (BSL.fromStrict txBin) :: TransactionRef
     block <- MaybeT $  loadBlockFromDisk db (txrefBlock txref)
     liftMaybe $ (Set.toList $ blockTransactions block) `at` (fromIntegral $ txrefIdx txref)
+
+pushDbTransaction :: Db -> Transaction -> Block -> IO ()
+pushDbTransaction db tx block =
+    LevelDb.put (dbTxIndex db) def (hashBs $ hash tx)
+               (BSL.toStrict $ BinPut.runPut $ Bin.put $ hash block)
 
 
 lastNBlocks :: Db -> Int -> IO [Block]
