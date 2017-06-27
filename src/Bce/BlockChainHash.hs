@@ -43,7 +43,7 @@ instance Hashable TxOutputRef where
     hash (TxOutputRef txId outputIdx) = hash $ mconcat [hashBs txId, int32ToBs outputIdx]
 
 instance Hashable (Set.Set Transaction) where
-    hash txs = hash $ mconcat $ map (hashBs . hash) (Set.toAscList txs)
+    hash txs = hash $ mconcat $ map (hashBs . hash) (Set.toList txs)
 
 
 instance Ord Transaction where

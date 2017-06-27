@@ -86,7 +86,7 @@ initDb dataDir =  do
                    $ (\h -> BSL.hPut h (BinPut.runPut $ Bin.put initialBlock))
   startHead <- ChainHead (blockHeader initialBlock) 1 (hash initialBlock) <$> now
   Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
-         <*> pure blocksIndexDb <*> newIORef (Set.fromList [startHead]) <*> newIORef Set.empty
+         <*> pure blocksIndexDb <*> newIORef (Set.singleton startHead) <*> newIORef Set.empty
 
 
 nextBlocks :: Db -> Hash -> IO (Set.Set Hash)
@@ -188,7 +188,7 @@ resolveInputOutput :: Db -> TxInput -> IO (Maybe TxOutput)
 resolveInputOutput db (TxInput (TxOutputRef refTxId refOutputIdx)) =
     runMaybeT $ do
       refTx <- MaybeT $ getDbTransaction db refTxId
-      liftMaybe $ (Set.toAscList $ txOutputs refTx) `at` (fromIntegral refOutputIdx)                          
+      liftMaybe $ (Set.toList $ txOutputs refTx) `at` (fromIntegral refOutputIdx)                          
 
 
 transactionFee :: Db -> Transaction -> IO (Maybe Int64)
@@ -228,7 +228,7 @@ verifyTransactionSignature db block tx =
 verifyTransaction db block tx = 
   case tx of
     CoinbaseTransaction outputs -> do
-            guard (onlyOne isCoinbaseTransaction $ Set.toAscList $ blockTransactions block)
+            guard (onlyOne isCoinbaseTransaction $ Set.toList $ blockTransactions block)
                       `mplus` left "more than one coinbase per block"
             guard (1 == length outputs)
                       `mplus` left "more than one output in coinbase transaction"
@@ -266,6 +266,13 @@ pushBlocks db blocks = mapM_ (pushBlock db) (reverse blocks) -- starting from ol
 
 pushBlock :: Db -> Block -> IO Bool
 pushBlock db block = Lock.with (dbLock db) $ pushBlockNoLock db block
+
+
+consumeTransactions :: Db -> Block -> IO ()
+consumeTransactions db block = do
+  oldTxs <- readIORef (dbTransactions db)
+  let newTxs = Set.difference oldTxs (blockTransactions block)
+  writeIORef (dbTransactions db) newTxs
                        
 pushBlockNoLock :: Db -> Block -> IO Bool
 pushBlockNoLock db block = do
@@ -273,6 +280,7 @@ pushBlockNoLock db block = do
                        case  verificationResult of
                          Right _ -> do
                            pushBlockToDisk db block
+                           consumeTransactions db block                                           
                            pushBlockToHeads db block
                          Left err -> do
                              logWarning $ "verification  pushing block failed: " ++ err
