@@ -16,6 +16,7 @@ library
     hs-source-dirs: src
     ghc-options: -g2 
     build-depends: Spock >= 0.12.0.0
+                 , aeson >= 0.11.2.1
                  , base
                  , base16-bytestring
                  , binary
@@ -63,6 +64,7 @@ executable bcedaemon
     build-depends:       Cabal,
                          Spock >= 0.12.0.0,
                          aeson,
+                         aeson >= 0.11.2.1,
                          base,
                          bce,
                          binary,
@@ -90,6 +92,7 @@ Test-Suite test-hunit-example
     hs-source-dirs:   tests
     Main-is:          Tests.hs
     Build-Depends:  Spock >= 0.12.0.0
+                  , aeson >= 0.11.2.1
                   , base
                   , bce
                   , binary

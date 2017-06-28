@@ -393,14 +393,13 @@ lastNBlocks db n = do
     getBlocksToHash db upto n
 
 
-getNextDifficulity :: Db -> IO Difficulity           
+getNextDifficulity :: Db -> IO Difficulity
 getNextDifficulity db = Lock.with (dbLock db) $ getNextDifficulityNoLock db
            
 getNextDifficulityNoLock :: Db -> IO Difficulity
 getNextDifficulityNoLock db =  do
   blocks <- lastNBlocks db difficulityRecalculationBlocks
   return $ nextDifficulity blocks
-    
 
 
 -- kill unperspective forks
