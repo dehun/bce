@@ -6,6 +6,9 @@
 ** DONE persistent file storage for blockchain
 ** DONE introduce normal logger
 ** DONE verification
+** DONE implement transactions
+** TODO debug transactions
+** TODO Implement transactions signature
 ** TODO implement rest api
 *** TODO base skeleton
 *** TODO balance request
@@ -13,13 +16,12 @@
 *** TODO find transaction request
 *** TODO network status request
 *** TODO node status request
-** TODO implement transactions
 ** TODO persistent storage for p2p peers
 ** TODO dead head pruning
 ** TODO optimize brag/ask - grow chain at N most, do not send whole blockchain because node is syncing from scratch
 ** TODO improve p2p again - 2 connections to same peer should not be possible
-** TODO investigate possibility of hard fork due to imperfect p2p
 ** TODO move verification away from db
 ** TODO select memory hard pow
 ** TODO configuration
 ** TODO set limit on amount of peers to store
+** TODO investigate possibility of hard fork due to imperfect p2p

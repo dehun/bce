@@ -1,5 +1,7 @@
 module Main where
 
+import Rest
+    
 import Bce.BlockChain
 import qualified Bce.P2p as P2p    
 import qualified Bce.Networking as Networking

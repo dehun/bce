@@ -150,6 +150,37 @@ chainLength db blockHash
         let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader block
         (+1) <$> chainLength db prevBlockHash
 
+isCoinbaseTransaction :: Transaction -> Bool    
+isCoinbaseTransaction (CoinbaseTransaction _) = True
+isCoinbaseTransaction _ = False
+
+resolveInputOutput :: Db -> TxInput -> IO (Maybe TxOutput)
+resolveInputOutput db (TxInput (TxOutputRef refTxId refOutputIdx)) =
+    runMaybeT $ do
+      refTx <- MaybeT $ getDbTransaction db refTxId
+      liftMaybe $ (Set.toList $ txOutputs refTx) `at` (fromIntegral refOutputIdx)                          
+
+
+transactionFee :: Db -> Transaction -> IO (Maybe Int64)
+transactionFee _ (CoinbaseTransaction _) = return $ Just 0
+transactionFee db (Transaction inputs outputs _) = runMaybeT $ do
+    let totalOutput = sum $ Set.map outputAmount outputs
+    inputOutputs <- liftIO $ mapM (resolveInputOutput db) (Set.toList inputs)
+    totalInput <- liftMaybe $ sum <$> map outputAmount <$> (sequence inputOutputs)
+    return $ totalInput - totalOutput
+
+maxCoinbaseReward :: Db -> [Transaction] -> IO (Maybe Int64)
+maxCoinbaseReward db txs = Lock.with (dbLock db) $ maxCoinbaseRewardNoLock db txs                          
+
+maxCoinbaseRewardNoLock :: Db -> [Transaction] -> IO (Maybe Int64)
+maxCoinbaseRewardNoLock db txs = runMaybeT $ do
+  feesOpt <- liftIO $ mapM (transactionFee db) txs
+  fees <- liftMaybe $ sequence feesOpt 
+  let baseReward = 50
+  return $ baseReward + sum fees
+
+           
+
 
 -- TODO: move verification away from here!
 
@@ -172,44 +203,12 @@ verifyBlockDifficulity db block = do
 blocksForTimeAveraging = 10                         
 verifyBlockTimestamp db block = do
   let blockTimestamp  = bhWallClockTime . blockHeader
-  lastBlocks <- liftIO $ lastNBlocks db blocksForTimeAveraging
+  lastBlocks <- liftIO $ getBlocksToHash db (hash block) blocksForTimeAveraging
   case lastBlocks of
     [] -> return ()
     _ -> do
       let avgTime = median $ map blockTimestamp lastBlocks
       guard (blockTimestamp block >= avgTime) `mplus` left "block timestamp is incorrect, less than last avg"
-
-
-isCoinbaseTransaction :: Transaction -> Bool    
-isCoinbaseTransaction (CoinbaseTransaction _) = True
-isCoinbaseTransaction _ = False
-
-resolveInputOutput :: Db -> TxInput -> IO (Maybe TxOutput)
-resolveInputOutput db (TxInput (TxOutputRef refTxId refOutputIdx)) =
-    runMaybeT $ do
-      refTx <- MaybeT $ getDbTransaction db refTxId
-      liftMaybe $ (Set.toList $ txOutputs refTx) `at` (fromIntegral refOutputIdx)                          
-
-
-transactionFee :: Db -> Transaction -> IO (Maybe Int64)
-transactionFee _ (CoinbaseTransaction _) = return $ Just 0
-transactionFee db (Transaction inputs outputs _) = runMaybeT $ do
-    let totalOutput = sum $ Set.map outputAmount outputs
-    inputOutputs <- liftIO $ mapM (resolveInputOutput db) (Set.toList inputs)
-    totalInput <- liftMaybe $ sum <$> map outputAmount <$> (sequence inputOutputs)
-    return $ totalInput - totalOutput
-
-
-maxCoinbaseReward :: Db -> [Transaction] -> IO (Maybe Int64)
-maxCoinbaseReward db txs = Lock.with (dbLock db) $ maxCoinbaseRewardNoLock db txs
-           
-                          
-maxCoinbaseRewardNoLock :: Db -> [Transaction] -> IO (Maybe Int64)
-maxCoinbaseRewardNoLock db txs = runMaybeT $ do
-  feesOpt <- liftIO $ mapM (transactionFee db) txs
-  fees <- liftMaybe $ sequence feesOpt 
-  let baseReward = 50
-  return $ baseReward + sum fees
 
 
 verifyTransactionSignature db block tx =
@@ -390,16 +389,8 @@ pushDbTransaction db tx block =
 
 lastNBlocks :: Db -> Int -> IO [Block]
 lastNBlocks db n = do
-  let border = hash $ initialBlock
-  start <- hash <$> chainHeadBlockHeader <$> longestHead db
-  let continue s k bs
-          | s == border = return $ reverse bs
-          | k == 0 = return $ reverse bs
-          | otherwise = do
-                     Just block <- loadBlockFromDisk db s
-                     let nxt = bhPrevBlockHeaderHash $ blockHeader block
-                     continue nxt (k -1) (block:bs)
-  continue start n []
+    upto <- hash <$> chainHeadBlockHeader <$> longestHead db
+    getBlocksToHash db upto n
 
 
 getNextDifficulity :: Db -> IO Difficulity           

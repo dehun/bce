@@ -15,7 +15,8 @@ cabal-version:       >=1.10
 library
     hs-source-dirs: src
     ghc-options: -g2 
-    build-depends: base
+    build-depends: Spock >= 0.12.0.0
+                 , base
                  , base16-bytestring
                  , binary
                  , bytestring
@@ -24,15 +25,16 @@ library
                  , cryptohash-sha256
                  , data-default
                  , directory
+                 , either
                  , leveldb-haskell
                  , mtl
                  , network
                  , random
                  , stm
+                 , text >= 1.2.2.1
                  , time
                  , transformers
                  , word8
-                 , either
                  
     exposed-modules: Bce.BlockChain
                    , Bce.Hash
@@ -53,12 +55,14 @@ library
     default-language:    Haskell2010    
                                          
 
-executable bce
+executable bcedaemon
     ghc-options: -g2
     main-is:             Main.hs
   -- other-modules:       
   -- other-extensions:    
     build-depends:       Cabal,
+                         Spock >= 0.12.0.0,
+                         aeson,
                          base,
                          bce,
                          binary,
@@ -66,18 +70,18 @@ executable bce
                          containers,
                          data-default,
                          directory,
+                         either,
                          leveldb-haskell,
                          mtl,
                          network,
                          random,
                          stm,
+                         text,
+                         text >= 1.2.2.1,
                          time,
                          transformers,
-                         word8,
-                         either
-                         -- aeson,
-                         -- spock
-    hs-source-dirs: src/bceapp
+                         word8
+    hs-source-dirs: src/BceDaemon
     default-language:    Haskell2010
 
 
@@ -85,13 +89,15 @@ Test-Suite test-hunit-example
     type:             exitcode-stdio-1.0
     hs-source-dirs:   tests
     Main-is:          Tests.hs
-    Build-Depends:  base
+    Build-Depends:  Spock >= 0.12.0.0
+                  , base
                   , bce
                   , binary
                   , concurrent-extra
                   , containers
                   , data-default
                   , directory
+                  , either
                   , leveldb-haskell
                   , mtl
                   , network
@@ -99,9 +105,9 @@ Test-Suite test-hunit-example
                   , stm
                   , tasty
                   , tasty-hunit
+                  , text >= 1.2.2.1
                   , time
                   , transformers
                   , word8
-                  , either
     default-language:    Haskell2010                  
                          
