@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
 module Bce.DbFs
     ( initDb
@@ -250,14 +251,15 @@ verifyTransaction db block tx =
 verifyBlockTransactions db block = do
   let txs = blockTransactions block
   guard (hash txs == bhTransactionsHash (blockHeader block)) `mplus` left "wrong stamped transactions hash"
-  mapM_ (verifyTransaction db block) txs
+  mapM_ (\tx -> verifyTransaction db block tx
+                `mplus` (left $ "; in transaction" ++ show (hash tx))) txs
 
 verifyBlock :: Db -> Block -> EitherT String IO [()]
 verifyBlock db block = do
     sequence [ verifyPrevBlockHashCorrect db block
              , verifyBlockDifficulity db block
              , verifyBlockTimestamp db block
-             , verifyBlockTransactions db block]
+             , verifyBlockTransactions db block] `mplus` (left $ "; in block" ++ (show $ hash block))
 
 
 --- end of verification, move is somewhere elso!
