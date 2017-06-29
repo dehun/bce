@@ -211,7 +211,7 @@ verifyBlockTimestamp db block = do
       guard (blockTimestamp block >= avgTime) `mplus` left "block timestamp is incorrect, less than last avg"
 
 
-verifyTransactionSignature db block tx =
+verifyTransactionSignature db tx =
     case tx of
       Transaction inputs outputs sig -> do
               inputOutputsOptSeq <- liftIO $ mapM (resolveInputOutput db) (Set.toList inputs)
@@ -224,6 +224,16 @@ verifyTransactionSignature db block tx =
                         `mplus` left "all input pub keys should match"
               guard (verifySignature sig pubKey (hash tx)) `mplus` left "transaction signature is incorrect"
 
+verifyTransactionTransaction db tx@(Transaction inputs outputs sig) = do
+  fee <- liftIO $ transactionFee db tx
+  guard (isJust fee) `mplus` left "transaction fee can not be calculated (absent input?)"
+  guard (fromJust fee >= 0) `mplus` left "transaction fee is below zero"
+  guard (length inputs > 0) `mplus` left "there are should be at least one transaction input"
+  guard (length outputs > 0) `mplus` left "there are should be at least one transaction output"
+  verifyTransactionSignature db tx
+verifyTransactionTransaction db _ = left "coinbase transaction is not allowed"
+                             
+
 verifyTransaction db block tx = 
   case tx of
     CoinbaseTransaction outputs -> do
@@ -235,13 +245,7 @@ verifyTransaction db block tx =
             guard (isJust expectedCoinbaseReward) `mplus` left "can not calculate or wrong coinbase reward"
             guard ((outputAmount $ head $ Set.toList $ outputs) == fromJust expectedCoinbaseReward)
                       `mplus` left "coinbase reward is incorrectly stamped"
-    Transaction inputs outputs sig -> do
-            fee <- liftIO $ transactionFee db tx
-            guard (isJust fee) `mplus` left "transaction fee can not be calculated (absent input?)"
-            guard (fromJust fee >= 0) `mplus` left "transaction fee is below zero"
-            guard (length inputs > 0) `mplus` left "there are should be at least one transaction input"
-            guard (length outputs > 0) `mplus` left "there are should be at least one transaction output"
-            verifyTransactionSignature db block tx
+    Transaction inputs outputs sig -> verifyTransactionTransaction db tx
 
 verifyBlockTransactions db block = do
   let txs = blockTransactions block
@@ -362,10 +366,12 @@ getTransactions db = Lock.with (dbLock db) $ do
                        readIORef $ dbTransactions db
 
 
-pushTransactions :: Db -> Set.Set Transaction -> IO ()
-pushTransactions db newTransactions = Lock.with (dbLock db) $ do
-                        oldTransactions <- readIORef (dbTransactions db)
-                        writeIORef (dbTransactions db) (Set.union oldTransactions newTransactions)
+pushTransactions :: Db -> Set.Set Transaction -> IO (Either String ())
+pushTransactions db newTransactions =
+    Lock.with (dbLock db) $ runEitherT $ do
+      mapM (verifyTransactionTransaction db) $ Set.toList newTransactions
+      oldTransactions <- liftIO $ readIORef (dbTransactions db)
+      liftIO $ writeIORef (dbTransactions db) (Set.union oldTransactions newTransactions)
 
 
 data TransactionRef = TransactionRef { txrefBlock :: Hash

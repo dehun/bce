@@ -3,7 +3,10 @@
 
 module Rest where
 
-import Bce.BlockChain    
+import Bce.BlockChain
+import qualified Bce.DbFs as Db
+import Bce.Util    
+    
 
 import Web.Spock
 import Web.Spock.Config
@@ -14,39 +17,44 @@ import Data.Text (Text, pack)
 import Control.Monad.Trans
 import Data.Monoid
 import Data.IORef
+import qualified Data.Set as Set
 
 import Control.Concurrent
 
-
-data MySession = EmptySession
-type Api = SpockM () () () ()
-
-
-type ApiAction a = SpockAction () () () a
-
-data ExampleData = ExampleData {a :: Int, b ::Int, c::String }  deriving (Generic, Show)
-instance ToJSON ExampleData
-instance FromJSON ExampleData    
+data ApiState = ApiState {apiDb :: Db.Db}  
+type Api = SpockM () () ApiState ()
+type ApiAction a = SpockAction () () ApiState a
 
 
-start port = forkIO $ restMain port
+start :: Db.Db -> Int -> IO ()
+start db port =  discardResult $ forkIO $ restMain db port
 
-restMain :: Int -> IO ()
-restMain port = do
-              spockCfg <- defaultSpockCfg () PCNoDatabase ()
-              runSpock port (spock spockCfg app)
-              return ()
+
+restMain :: Db.Db -> Int -> IO ()
+restMain db port = do
+  let initialState = ApiState db
+  spockCfg <- defaultSpockCfg () PCNoDatabase initialState
+  runSpock port (spock spockCfg app)
+  return ()
+
+data ApiResponse = RespondError String
+                 | RespondOk deriving (Generic)
+instance FromJSON ApiResponse
+instance ToJSON ApiResponse    
 
 
 postTransaction = do
-  thePerson <- jsonBody' :: ApiAction ExampleData
-  text $ "Parsed: " <> pack (show thePerson)
+  tx <- jsonBody' :: ApiAction Transaction
+  ApiState db <- getState
+  res <- liftIO $ Db.pushTransactions db $ Set.singleton tx
+  case res of
+    Right () -> json RespondOk
+    Left err -> json $ RespondError err
 
 
 app :: Api
 app = do
-  get root $ text "hello"
-  post "transaction" $ do
-        postTransaction
+  get root $ text "welcome to BCE rest api"
+  post "transaction" $ postTransaction
 
   
