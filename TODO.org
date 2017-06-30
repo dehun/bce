@@ -13,6 +13,7 @@
 *** DONE find transaction request
 *** DONE balance request
 ** TODO implement balance request
+** TODO limit fork depth
 ** TODO check double spend!
 ** TODO debug transactions
 ** TODO use network time in verification! security issue!

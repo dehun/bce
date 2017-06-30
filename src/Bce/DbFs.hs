@@ -254,8 +254,14 @@ verifyTransaction db block tx =
 verifyBlockTransactions db block = do
   let txs = blockTransactions block
   guard (hash txs == bhTransactionsHash (blockHeader block)) `mplus` left "wrong stamped transactions hash"
+  let allInputs = concatMap (\tx -> case tx of
+                                          CoinbaseTransaction _ -> []
+                                          _ -> Set.toList $ txInputs tx
+                            ) $ Set.toList txs
+  guard (all (\inp -> onlyOne (==inp) allInputs) allInputs) `mplus` left "input used more than once"
   mapM_ (\tx -> verifyTransaction db block tx
                 `mplus` (left $ "; in transaction" ++ show (hash tx))) txs
+
 
 verifyBlock :: Db -> Block -> EitherT String IO [()]
 verifyBlock db block = do
@@ -285,14 +291,15 @@ pushBlockNoLock db block = do
                        verificationResult <- runEitherT $ verifyBlock db block
                        case  verificationResult of
                          Right _ -> do
-                           pushBlockToDisk db block
-                           consumeTransactions db block                                           
-                           pushBlockToHeads db block
+                             pushBlockToDisk db block
+                             consumeTransactions db block
+                             pushBlockToHeads db block
+                             return True
                          Left err -> do
                              logWarning $ "verification  pushing block failed: " ++ err
                              return False
                        
-pushBlockToHeads :: Db -> Block -> IO Bool
+pushBlockToHeads :: Db -> Block -> IO ()
 pushBlockToHeads db block =  do
     let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader $ block
     oldHeads <- readIORef $ dbHeads db
@@ -309,7 +316,7 @@ pushBlockToHeads db block =  do
                     let fixedHeads = Set.delete prevHead oldHeads
                     return $ Set.insert newHead fixedHeads
     writeIORef (dbHeads db) newHeads
-    return True
+
 
 
 getBlock :: Db -> Hash -> IO (Maybe Block)
@@ -412,8 +419,14 @@ getNextDifficulityNoLock db =  do
   return $ nextDifficulity blocks
 
 
+balanceAt :: Db -> Hash -> PubKey -> IO (Set.Set TxOutputRef)
+balanceAt db uptoBlock ownerKey = undefined
+
+
 getPubKeyBalance :: Db -> PubKey -> IO (Set.Set TxOutputRef)
-getPubKeyBalance db pubKey = undefined
+getPubKeyBalance db ownerKey = do
+    uptoBlock <- hash <$> chainHeadBlockHeader <$> longestHead db
+    balanceAt db uptoBlock ownerKey
 
 
 -- kill unperspective forks

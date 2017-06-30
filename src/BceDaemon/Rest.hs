@@ -45,7 +45,9 @@ data ApiResponse = RespondError { error :: String }
 instance FromJSON ApiResponse
 instance ToJSON ApiResponse
 
+
 getRoot = text "welcome to BCE rest api"
+
 
 getTransaction = do
   ApiState db <- getState
@@ -70,8 +72,10 @@ postTransaction = do
     Right () -> json RespondOk
     Left err -> json $ RespondError err
 
+
 data WalletBalance = WalletBalance { outputs :: Set.Set TxOutputRef } deriving (Show, Eq, Generic)
 instance ToJSON WalletBalance                   
+
 
 getBalance = do
   ApiState db <- getState  
@@ -82,6 +86,7 @@ getBalance = do
         balance <- liftIO $ Db.getPubKeyBalance db pubKey
         json $ WalletBalance balance
     Nothing -> json $ RespondError "no wallet parameter"
+
 
 app :: Api
 app = do
