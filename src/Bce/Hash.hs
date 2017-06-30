@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -8,6 +9,7 @@ import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BSL    
 import qualified Data.ByteString.Lazy.Builder as BSB    
 import qualified Data.ByteString.Base16 as B16
+import qualified Data.Text.Encoding as TextEncoding        
 import GHC.Int(Int64)
 import GHC.Generics (Generic)
 import Data.Binary    
@@ -16,6 +18,12 @@ data Hash = Hash { hashBs :: BS.ByteString } deriving (Eq, Ord, Generic)
 
 instance Show Hash where
     show (Hash h) = BS.unpack $ B16.encode h
+
+instance Read Hash where
+    readsPrec _ input = let (d, r) = B16.decode $ BS.pack input
+                       in if d == BS.empty
+                          then []
+                          else [(Hash d, BS.unpack r)]
 
 class Hashable a where
     hash :: a -> Hash

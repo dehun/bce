@@ -10,9 +10,11 @@ module Bce.DbFs
     , getBlock
     , Db
     , getTransactions
+    , getDbTransaction
     , pushTransactions
     , getNextDifficulity
-    , maxCoinbaseReward)
+    , maxCoinbaseReward
+    , getPubKeyBalance)
         where
 
 
@@ -158,7 +160,7 @@ isCoinbaseTransaction _ = False
 resolveInputOutput :: Db -> TxInput -> IO (Maybe TxOutput)
 resolveInputOutput db (TxInput (TxOutputRef refTxId refOutputIdx)) =
     runMaybeT $ do
-      refTx <- MaybeT $ getDbTransaction db refTxId
+      refTx <- MaybeT $ getDbTransactionNoLock db refTxId
       liftMaybe $ (Set.toList $ txOutputs refTx) `at` (fromIntegral refOutputIdx)                          
 
 
@@ -248,6 +250,7 @@ verifyTransaction db block tx =
                       `mplus` left "coinbase reward is incorrectly stamped"
     Transaction inputs outputs sig -> verifyTransactionTransaction db tx
 
+
 verifyBlockTransactions db block = do
   let txs = blockTransactions block
   guard (hash txs == bhTransactionsHash (blockHeader block)) `mplus` left "wrong stamped transactions hash"
@@ -261,10 +264,7 @@ verifyBlock db block = do
              , verifyBlockTimestamp db block
              , verifyBlockTransactions db block] `mplus` (left $ "; in block" ++ (show $ hash block))
 
-
 --- end of verification, move is somewhere elso!
-  
-  
 
 pushBlocks :: Db -> [Block] -> IO ()
 pushBlocks db blocks = mapM_ (pushBlock db) (reverse blocks) -- starting from oldest
@@ -380,9 +380,11 @@ data TransactionRef = TransactionRef { txrefBlock :: Hash
                                      , txrefIdx :: Int32} deriving (Show, Eq, Generic)
 instance Bin.Binary TransactionRef
 
-
 getDbTransaction :: Db -> Hash -> IO (Maybe Transaction)
-getDbTransaction db txHash =
+getDbTransaction db txHash = Lock.with (dbLock db) $ getDbTransactionNoLock db txHash
+    
+getDbTransactionNoLock :: Db -> Hash -> IO (Maybe Transaction)
+getDbTransactionNoLock db txHash =
   runMaybeT $ do
     txBin <- MaybeT $ liftIO $ LevelDb.get (dbTxIndex db) def (hashBs txHash)
     let txref = BinGet.runGet Bin.get (BSL.fromStrict txBin) :: TransactionRef
@@ -408,6 +410,10 @@ getNextDifficulityNoLock :: Db -> IO Difficulity
 getNextDifficulityNoLock db =  do
   blocks <- lastNBlocks db difficulityRecalculationBlocks
   return $ nextDifficulity blocks
+
+
+getPubKeyBalance :: Db -> PubKey -> IO (Set.Set TxOutputRef)
+getPubKeyBalance db pubKey = undefined
 
 
 -- kill unperspective forks
