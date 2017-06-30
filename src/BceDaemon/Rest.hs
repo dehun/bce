@@ -48,6 +48,17 @@ instance ToJSON ApiResponse
 
 getRoot = text "welcome to BCE rest api"
 
+getBlock = do
+  ApiState db <- getState
+  blockIdStrOpt <- param "blockId"
+  case blockIdStrOpt of
+    Nothing -> json $ RespondError "no blockId parameter"
+    Just blockIdStr -> do
+          let blockId = read blockIdStr :: Hash
+          blockOpt <- liftIO $ Db.getBlock db blockId
+          case blockOpt of
+            Just block -> json block
+            Nothing -> json $ RespondError "no such block"
 
 getTransaction = do
   ApiState db <- getState
@@ -91,6 +102,7 @@ getBalance = do
 app :: Api
 app = do
   get root $ getRoot
+  get "/block" getBlock  
   get "/transaction" getTransaction
   post "/transaction" postTransaction
   get "/balance" getBalance
