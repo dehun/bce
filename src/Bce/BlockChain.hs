@@ -7,6 +7,7 @@ import Bce.Hash
 import Bce.TimeStamp
 
 import Data.Maybe
+import Data.Ord    
 import qualified Data.Set as Set
 import GHC.Int(Int64, Int32)
 import GHC.Generics (Generic)
@@ -20,6 +21,8 @@ data TxOutputRef = TxOutputRef {
     , outputRefOutputIdx :: Int32
       } deriving (Show, Eq, Generic)
 
+instance Ord TxOutputRef
+    where compare = comparing show
 
 data TxInput = TxInput { inputOutputRef :: TxOutputRef } deriving (Show, Eq, Generic)
 

@@ -259,6 +259,9 @@ verifyBlockTransactions db block = do
                                           _ -> Set.toList $ txInputs tx
                             ) $ Set.toList txs
   guard (all (\inp -> onlyOne (==inp) allInputs) allInputs) `mplus` left "input used more than once"
+  unspent <- liftIO $ unspentAt db (bhPrevBlockHeaderHash $ blockHeader block)
+  let spentOutputs = Set.fromList $ map inputOutputRef allInputs
+  guard (Set.isSubsetOf spentOutputs unspent) `mplus` left "double spend attempt"
   mapM_ (\tx -> verifyTransaction db block tx
                 `mplus` (left $ "; in transaction" ++ show (hash tx))) txs
 
@@ -414,14 +417,39 @@ getNextDifficulity :: Db -> IO Difficulity
 getNextDifficulity db = Lock.with (dbLock db) $ getNextDifficulityNoLock db
            
 getNextDifficulityNoLock :: Db -> IO Difficulity
-getNextDifficulityNoLock db =  do
+getNextDifficulityNoLock db = do
   blocks <- lastNBlocks db difficulityRecalculationBlocks
   return $ nextDifficulity blocks
 
 
-balanceAt :: Db -> Hash -> PubKey -> IO (Set.Set TxOutputRef)
-balanceAt db uptoBlock ownerKey = undefined
+unspentAt :: Db -> Hash -> IO (Set.Set TxOutputRef)
+unspentAt db uptoBlock =
+    continue uptoBlock Set.empty
+    where continue h unspent
+              | h == hash initialBlock = return unspent
+              | otherwise = do
+            Just block <- loadBlockFromDisk db h
+            let txs = blockTransactions block
+            let income = concatMap (\tx ->
+                                        let enumeratedOutputs = (zip (Set.toList $ txOutputs tx) [1..])
+                                        in map (\(o, n) -> TxOutputRef (hash tx) n) enumeratedOutputs) txs
+            let spendings = concatMap (\tx -> case tx of
+                                                CoinbaseTransaction _ -> []
+                                                _ -> Set.toList$ Set.map inputOutputRef $  txInputs tx) txs
+            let totalIncome = Set.union unspent (Set.fromList income)
+            let newTotal = Set.difference totalIncome (Set.fromList spendings)
+            continue (bhPrevBlockHeaderHash $ blockHeader block) newTotal
+    
 
+
+balanceAt :: Db -> Hash -> PubKey -> IO (Set.Set TxOutputRef)
+balanceAt db uptoBlock ownerKey = do
+    allUnspentOutputs <- unspentAt db uptoBlock
+    Set.fromList
+           <$> (filterM (\ref -> do
+                           Just output <- resolveInputOutput db (TxInput ref)
+                           return $ ownerKey == outputPubKey output
+                        ) $ Set.toList allUnspentOutputs)
 
 getPubKeyBalance :: Db -> PubKey -> IO (Set.Set TxOutputRef)
 getPubKeyBalance db ownerKey = do
