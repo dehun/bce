@@ -7,16 +7,16 @@
 ** DONE introduce normal logger
 ** DONE verification
 ** DONE implement transactions
-** TODO implement rest api
+** DONE implement rest api
 *** DONE base skeleton
 *** DONE push transaction request
 *** DONE find transaction request
-*** TODO balance request
-*** TODO network status request
-*** TODO node status request
+*** DONE balance request
+** TODO implement balance request
+** TODO check double spend!
+** TODO debug transactions
 ** TODO use network time in verification! security issue!
 ** TODO command line args parsing
-** TODO debug transactions
 ** TODO Implement transactions signature
 ** TODO persistent storage for p2p peers
 ** TODO dead head pruning
@@ -28,3 +28,4 @@
 ** TODO set limit on amount of peers to store
 ** TODO investigate possibility of hard fork due to imperfect p2p
 ** TODO fix hlint issues
+** TODO implement client/wallet

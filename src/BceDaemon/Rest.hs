@@ -45,9 +45,6 @@ data ApiResponse = RespondError { error :: String }
 instance FromJSON ApiResponse
 instance ToJSON ApiResponse
 
-
---getTransaction :: Text -> Api
-
 getRoot = text "welcome to BCE rest api"
 
 getTransaction = do
