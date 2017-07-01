@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Bce.BlockChainSerialization where
 
-import Bce.Hash    
+import Bce.Hash
+import Bce.Crypto    
 import qualified Bce.BlockChain as BlockChain
 import Bce.BlockChainHash
 
@@ -17,6 +18,8 @@ import qualified Data.ByteString.Base16 as B16
     
 
 instance Bin.Binary Hash
+instance Bin.Binary PubKey
+instance Bin.Binary PrivKey        
 instance Bin.Binary BlockChain.TxOutputRef                    
 instance Bin.Binary BlockChain.TxOutput                
 instance Bin.Binary BlockChain.TxInput            
@@ -32,6 +35,8 @@ instance Aeson.FromJSON BS.ByteString where
 
 
 instance Aeson.FromJSON Hash
+instance Aeson.FromJSON PubKey
+instance Aeson.FromJSON PrivKey        
 instance Aeson.FromJSON BlockChain.TxOutputRef
 instance Aeson.FromJSON BlockChain.TxOutput                
 instance Aeson.FromJSON BlockChain.TxInput            
@@ -40,6 +45,8 @@ instance Aeson.FromJSON BlockChain.BlockHeader
 instance Aeson.FromJSON BlockChain.Block
 
 instance Aeson.ToJSON Hash
+instance Aeson.ToJSON PubKey
+instance Aeson.ToJSON PrivKey        
 instance Aeson.ToJSON BlockChain.TxOutputRef                    
 instance Aeson.ToJSON BlockChain.TxOutput                
 instance Aeson.ToJSON BlockChain.TxInput            

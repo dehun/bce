@@ -2,6 +2,7 @@
 module Bce.BlockChainHash where
 
 import Bce.Hash
+import Bce.Crypto    
 import Bce.BlockChain
 
 import qualified Crypto.Hash.SHA256 as Sha
@@ -46,6 +47,13 @@ instance Hashable (Set.Set Transaction) where
     hash txs = hash $ mconcat $ map (hashBs . hash) (Set.toList txs)
 
 
+instance Hashable PubKey where hash (PubKey bs) = hash bs
+instance Hashable PrivKey where hash (PrivKey bs) = hash bs
+
+transactionId :: Block -> Transaction -> TransactionId
+transactionId block tx = hash $ mconcat $ map hashBs [hash block, hash tx]
+
+-- TODO: move this away!
 instance Ord Transaction where
     compare = comparing show
 
@@ -53,4 +61,6 @@ instance Ord TxOutput where
     compare = comparing show
 
 instance Ord TxInput where
-    compare = comparing show              
+    compare = comparing show
+
+              

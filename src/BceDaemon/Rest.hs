@@ -94,6 +94,7 @@ getBalance = do
   case pubKeyStrOpt of
     Just pubKeyStr -> do
         let pubKey = read pubKeyStr :: PubKey
+        liftIO $ logInfo $ "inspecting wallet " ++ show pubKey
         balance <- liftIO $ Db.getPubKeyBalance db pubKey
         json $ WalletBalance balance
     Nothing -> json $ RespondError "no wallet parameter"

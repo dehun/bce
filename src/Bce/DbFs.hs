@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
 module Bce.DbFs
     ( initDb
@@ -27,7 +28,8 @@ import Bce.TimeStamp
 import Bce.Difficulity    
 import Bce.Util
 import Bce.Logger
-import Bce.Crypto    
+import Bce.Crypto
+import Debug.Trace    
 
 import GHC.Generics (Generic)
 import GHC.Int(Int64, Int32)
@@ -128,7 +130,7 @@ loadBlockFromDisk db blockHash =
                                               content <- BSL.fromStrict <$> BS.hGetContents h
                                               return $ Just $ BinGet.runGet Bin.get content)
                     ) (\e -> do
-                         let err = show (e :: Exception.IOException)
+                         let err = show (e :: Exception.SomeException)
                          logTrace $ "error occured on block loading " ++ err
                          return Nothing
                       )
@@ -187,7 +189,9 @@ maxCoinbaseRewardNoLock db txs = runMaybeT $ do
 
 -- TODO: move verification away from here!
 
-verifyPrevBlockHashCorrect db block = do
+verifyPrevBlockHashCorrect db block
+    | block == initialBlock = return ()
+    | otherwise = do
   let prevHash = bhPrevBlockHeaderHash $ blockHeader block
   prevBlockOpt <- liftIO $ loadBlockFromDisk db prevHash
   guard (isJust prevBlockOpt) `mplus` left "wrong prev block hash"
@@ -263,11 +267,13 @@ verifyBlockTransactions db block = do
   let spentOutputs = Set.fromList $ map inputOutputRef allInputs
   guard (Set.isSubsetOf spentOutputs unspent) `mplus` left "double spend attempt"
   mapM_ (\tx -> verifyTransaction db block tx
-                `mplus` (left $ "; in transaction" ++ show (hash tx))) txs
+                `mplus` (left $ "; in transaction" ++ show (transactionId block tx))) txs
 
 
 verifyBlock :: Db -> Block -> EitherT String IO [()]
-verifyBlock db block = do
+verifyBlock db block
+    | block == initialBlock = return [()] -- initial block is valid, even though it does not have prev block
+    | otherwise = do
     sequence [ verifyPrevBlockHashCorrect db block
              , verifyBlockDifficulity db block
              , verifyBlockTimestamp db block
@@ -291,19 +297,22 @@ consumeTransactions db block = do
                        
 pushBlockNoLock :: Db -> Block -> IO Bool
 pushBlockNoLock db block = do
-                       verificationResult <- runEitherT $ verifyBlock db block
-                       case  verificationResult of
-                         Right _ -> do
-                             pushBlockToDisk db block
-                             consumeTransactions db block
-                             pushBlockToHeads db block
-                             return True
-                         Left err -> do
-                             logWarning $ "verification  pushing block failed: " ++ err
-                             return False
+  verificationResult <- runEitherT $ verifyBlock db block
+  case  verificationResult of
+    Right _ -> do
+      logInfo $ "pushing block" ++ show (hash block)
+      pushBlockToDisk db block
+      consumeTransactions db block
+      pushBlockToHeads db block
+      return True
+    Left err -> do
+      logWarning $ "verification  pushing block failed: " ++ err
+      return False
                        
 pushBlockToHeads :: Db -> Block -> IO ()
-pushBlockToHeads db block =  do
+pushBlockToHeads db block
+    | block == initialBlock = return () -- already in heads! see initialization. refactor this shit
+    | otherwise = do
     let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader $ block
     oldHeads <- readIORef $ dbHeads db
     let prevHeadOpt = find (\h -> prevBlockHash == (hash $ chainHeadBlockHeader h)) oldHeads
@@ -325,11 +334,6 @@ pushBlockToHeads db block =  do
 getBlock :: Db -> Hash -> IO (Maybe Block)
 getBlock db hash = Lock.with (dbLock db) $ do
     loadBlockFromDisk db hash
-
-
-loadTransaction :: Db -> Hash -> IO Transaction
-loadTransaction db txHash = undefined
-
 
 longestHead :: Db -> IO ChainHead
 longestHead db = maximumBy (comparing chainHeadLength) <$> readIORef (dbHeads db)
@@ -390,21 +394,24 @@ data TransactionRef = TransactionRef { txrefBlock :: Hash
                                      , txrefIdx :: Int32} deriving (Show, Eq, Generic)
 instance Bin.Binary TransactionRef
 
-getDbTransaction :: Db -> Hash -> IO (Maybe Transaction)
+getDbTransaction :: Db -> TransactionId -> IO (Maybe Transaction)
 getDbTransaction db txHash = Lock.with (dbLock db) $ getDbTransactionNoLock db txHash
     
-getDbTransactionNoLock :: Db -> Hash -> IO (Maybe Transaction)
-getDbTransactionNoLock db txHash =
+getDbTransactionNoLock :: Db -> TransactionId -> IO (Maybe Transaction)
+getDbTransactionNoLock db txId =
   runMaybeT $ do
-    txBin <- MaybeT $ liftIO $ LevelDb.get (dbTxIndex db) def (hashBs txHash)
+    txBin <- MaybeT $ liftIO $ LevelDb.get (dbTxIndex db) def (hashBs txId)
     let txref = BinGet.runGet Bin.get (BSL.fromStrict txBin) :: TransactionRef
+    liftIO $ logInfo $ "got txRef" ++ show txref
     block <- MaybeT $  loadBlockFromDisk db (txrefBlock txref)
     liftMaybe $ (Set.toList $ blockTransactions block) `at` (fromIntegral $ txrefIdx txref)
 
 pushDbTransaction :: Db -> Transaction -> Block -> IO ()
 pushDbTransaction db tx block =
-    LevelDb.put (dbTxIndex db) def (hashBs $ hash tx)
-               (BSL.toStrict $ BinPut.runPut $ Bin.put $ hash block)
+    let Just txIdx = Set.lookupIndex tx (blockTransactions block)
+        txRef = TransactionRef (hash block) $ fromIntegral txIdx
+    in LevelDb.put (dbTxIndex db) def (hashBs $ transactionId block tx)
+           (BSL.toStrict $ BinPut.runPut $ Bin.put $ txRef)
 
 
 lastNBlocks :: Db -> Int -> IO [Block]
@@ -424,22 +431,21 @@ getNextDifficulityNoLock db = do
 
 unspentAt :: Db -> Hash -> IO (Set.Set TxOutputRef)
 unspentAt db uptoBlock =
-    continue uptoBlock Set.empty
-    where continue h unspent
+    continue uptoBlock Set.empty Set.empty
+    where continue h unspent spent
               | h == hash initialBlock = return unspent
               | otherwise = do
             Just block <- loadBlockFromDisk db h
             let txs = blockTransactions block
-            let income = concatMap (\tx ->
-                                        let enumeratedOutputs = (zip (Set.toList $ txOutputs tx) [1..])
-                                        in map (\(o, n) -> TxOutputRef (hash tx) n) enumeratedOutputs) txs
-            let spendings = concatMap (\tx -> case tx of
+            let income = Set.fromList $ concatMap (\tx ->
+                           let enumeratedOutputs = (zip (Set.toList $ txOutputs tx) [0..])
+                           in map (\(o, n) -> TxOutputRef (transactionId block tx) n) enumeratedOutputs) txs
+            let spendings = Set.fromList $ concatMap (\tx -> case tx of
                                                 CoinbaseTransaction _ -> []
-                                                _ -> Set.toList$ Set.map inputOutputRef $  txInputs tx) txs
-            let totalIncome = Set.union unspent (Set.fromList income)
-            let newTotal = Set.difference totalIncome (Set.fromList spendings)
-            continue (bhPrevBlockHeaderHash $ blockHeader block) newTotal
-    
+                                                _ -> Set.toList $ Set.map inputOutputRef $ txInputs tx) txs
+            let newUnspent = Set.difference (Set.union unspent income) (Set.union spent spendings)
+            let newSpent = Set.difference (Set.union spent spendings) (Set.union unspent income)
+            continue (bhPrevBlockHeaderHash $ blockHeader block) newUnspent newSpent
 
 
 balanceAt :: Db -> Hash -> PubKey -> IO (Set.Set TxOutputRef)
@@ -451,8 +457,9 @@ balanceAt db uptoBlock ownerKey = do
                            return $ ownerKey == outputPubKey output
                         ) $ Set.toList allUnspentOutputs)
 
+
 getPubKeyBalance :: Db -> PubKey -> IO (Set.Set TxOutputRef)
-getPubKeyBalance db ownerKey = do
+getPubKeyBalance db ownerKey = Lock.with (dbLock db) $ do
     uptoBlock <- hash <$> chainHeadBlockHeader <$> longestHead db
     balanceAt db uptoBlock ownerKey
 
@@ -470,6 +477,3 @@ prune db = Lock.with (dbLock db) $ do
 
 pruneHead :: Db -> ChainHead -> IO ()
 pruneHead db deadHead = return () -- TODO: implement me
-  
-  
-         

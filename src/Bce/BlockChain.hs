@@ -12,12 +12,15 @@ import qualified Data.Set as Set
 import GHC.Int(Int64, Int32)
 import GHC.Generics (Generic)
 
+
+type TransactionId = Hash    
+
 data TxOutput = TxOutput { outputAmount :: Int64
                          , outputPubKey :: PubKey
                          } deriving (Show, Eq, Generic)
 
 data TxOutputRef = TxOutputRef {
-      outputRefTxId :: Hash
+      outputRefTxId :: TransactionId
     , outputRefOutputIdx :: Int32
       } deriving (Show, Eq, Generic)
 
@@ -34,7 +37,7 @@ data Transaction =
     , txOutputs :: Set.Set TxOutput
     , txSignature :: Signature } deriving (Show, Eq, Generic)
 
-
+    
 data BlockHeader = BlockHeader {
       bhTransactionsHash :: Hash
     , bhPrevBlockHeaderHash :: Hash

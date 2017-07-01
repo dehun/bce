@@ -36,21 +36,19 @@ tryGenerateBlock time rnd prevBlock txs target = do
   else Nothing
     
 
-coinbaseTransaction :: Db.Db -> Set.Set Transaction -> IO Transaction
-coinbaseTransaction db txs = do
+coinbaseTransaction :: Db.Db -> PubKey -> Set.Set Transaction -> IO Transaction
+coinbaseTransaction db ownerKey txs = do
     Just maxReward <- Db.maxCoinbaseReward db (Set.toList txs)
-    return $ CoinbaseTransaction $ Set.fromList [TxOutput maxReward BS.empty]
+    return $ CoinbaseTransaction $ Set.fromList [TxOutput maxReward ownerKey]
 
--- TODO: split that forever with actual mining
 -- TODO: split mining into finding block and pushing it to db
-growChain :: Db.Db -> Timer -> IO ()
-growChain db timer = do
-  forever $ do
+growChain :: Db.Db -> PubKey -> Timer -> IO ()
+growChain db ownerKey timer = do
     time <- timer
     rnd <- randomIO :: IO Int64
     generated <- do
       rtxs <- Db.getTransactions db              
-      cbtx <- coinbaseTransaction db rtxs
+      cbtx <- coinbaseTransaction db ownerKey rtxs
       txs <- Set.insert cbtx <$> Db.getTransactions db
       (_, topBlock) <- Db.getLongestHead db
       next <- tryGenerateBlock time rnd <$> pure topBlock <*> pure txs  <*> Db.getNextDifficulity db
@@ -64,6 +62,9 @@ growChain db timer = do
       logInfo $ show time ++ " got chain of length " ++ show headLength
                   ++ "; block difficulity is " ++ (show $ blockDifficulity topBlock)
                   ++ "; next difficulity is " ++ (show nextDiff)
-                  ++ "; blockhash is" ++ (show $ hash topBlock)
+                  ++ "; blockhash is " ++ (show $ hash topBlock)
       return ()
     else return ()
+
+mineForever :: Db.Db -> PubKey -> Timer -> IO ()
+mineForever db pubkey timer = forever $ growChain db pubkey timer

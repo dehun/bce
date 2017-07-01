@@ -12,13 +12,16 @@
 *** DONE push transaction request
 *** DONE find transaction request
 *** DONE balance request
-** TODO implement balance request
+** DONE implement balance request
+** DONE check double spend!
+** TODO implement transactions signature
+** TODO cover shit with unit tests
 ** TODO limit fork depth
-** TODO check double spend!
 ** TODO debug transactions
 ** TODO use network time in verification! security issue!
+** TODO minimize db - too much responsibilities
+** TODO make distinguish between loading and pushing (don't write it to disk twice at least)
 ** TODO command line args parsing
-** TODO Implement transactions signature
 ** TODO persistent storage for p2p peers
 ** TODO dead head pruning
 ** TODO optimize brag/ask - grow chain at N most, do not send whole blockchain because node is syncing from scratch

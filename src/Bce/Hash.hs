@@ -42,6 +42,3 @@ instance Hashable BS.ByteString where
 
 instance Hashable Int64 where
     hash i = hash $ BSB.toLazyByteString $ BSB.int64BE i
-
-
-        

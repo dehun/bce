@@ -3,6 +3,7 @@ module Main where
 import Rest
     
 import Bce.BlockChain
+import Bce.Crypto    
 import Bce.Logger    
 import qualified Bce.P2p as P2p    
 import qualified Bce.Networking as Networking
@@ -15,6 +16,7 @@ import Bce.InitialBlock
 import Control.Monad
 import Control.Concurrent
 import System.Environment
+import qualified Data.ByteString as BS    
 
 -- ./dist/build/bce/bcedaemon "(127,0,0,1)" 3555 "(127,0,0,1)" 3777 8080
 main :: IO ()
@@ -33,6 +35,7 @@ main = do
   logInfo $ "starting http on port " ++ show restApiPort
   Rest.start db (read restApiPort)
   logInfo $ "starting mining"
-  Miner.growChain db networkTimer
+  let ownerKey = PubKey $ BS.pack [0xde, 0xad]
+  Miner.mineForever db ownerKey networkTimer
 
   
