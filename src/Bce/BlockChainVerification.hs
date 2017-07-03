@@ -29,8 +29,8 @@ verifyPrevBlockHashCorrect db block
     | block == initialBlock = return ()
     | otherwise = do
   let prevHash = bhPrevBlockHeaderHash $ blockHeader block
-  prevBlockOpt <- liftIO $ Db.loadBlockFromDisk db prevHash
-  guard (isJust prevBlockOpt) `mplus` left "wrong prev block hash"
+  exists <- liftIO $ Db.isBlockExists db prevHash
+  guard exists `mplus` left "wrong prev block hash"
 
 
 verifyBlockDifficulity db block = do

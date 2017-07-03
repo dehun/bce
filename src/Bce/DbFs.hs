@@ -18,7 +18,7 @@ module Bce.DbFs
     , unspentAt
     , transactionFee
     , resolveInputOutput
-    , loadBlockFromDisk
+    , isBlockExists
     )
         where
 
@@ -131,9 +131,12 @@ dbBlockPath db blockHash = blockPath (dbDataDir db) blockHash
 
 blockPath dataDir blockHash = dataDir ++ "/" ++ show blockHash ++ ".blk"                           
 
+
+isBlockExists :: Db -> Hash -> IO Bool
+isBlockExists db blockId = isJust <$> loadBlockFromDisk db blockId
                   
 loadBlockFromDisk :: Db -> Hash -> IO (Maybe Block)
-loadBlockFromDisk db blockHash =
+loadBlockFromDisk db blockHash = Lock.with (dbLock db) $ 
     Exception.catch (do
                       withBinaryFile (dbBlockPath db blockHash) ReadMode
                                          $ (\h -> do
