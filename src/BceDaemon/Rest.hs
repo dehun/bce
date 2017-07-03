@@ -5,10 +5,12 @@ module Rest where
 
 import Bce.BlockChain
 import qualified Bce.DbFs as Db
+import qualified Bce.VerifiedDb as VerifiedDb    
 import Bce.Util
 import Bce.Hash    
 import Bce.Crypto
-import Bce.Logger    
+import Bce.Logger
+    
 
 
 import Web.Spock
@@ -78,7 +80,7 @@ getTransaction = do
 postTransaction = do
   tx <- jsonBody' :: ApiAction Transaction
   ApiState db <- getState
-  res <- liftIO $ Db.pushTransactions db $ Set.singleton tx
+  res <- liftIO $ VerifiedDb.verifyAndPushTransactions db $ Set.singleton tx
   case res of
     Right () -> json RespondOk
     Left err -> json $ RespondError err

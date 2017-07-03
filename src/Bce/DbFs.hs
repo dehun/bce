@@ -1,23 +1,26 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
 module Bce.DbFs
-    ( initDb
+    ( Db
+    , initDb
     , loadDb
     , pushBlock
-    , pushBlocks
     , getBlocksFromHash
+    , getBlocksToHash
     , getLongestHead
     , getBlock
-    , Db
     , getTransactions
     , getDbTransaction
     , pushTransactions
     , getNextDifficulity
     , maxCoinbaseReward
-    , getPubKeyBalance)
+    , getPubKeyBalance
+    , unspentAt
+    , transactionFee
+    , resolveInputOutput
+    , loadBlockFromDisk
+    )
         where
-
 
 import Bce.BlockChain
 import Bce.InitialBlock    
@@ -29,7 +32,6 @@ import Bce.Difficulity
 import Bce.Util
 import Bce.Logger
 import Bce.Crypto
-import Debug.Trace    
 
 import GHC.Generics (Generic)
 import GHC.Int(Int64, Int32)
@@ -47,8 +49,10 @@ import Data.List
 import Data.Ord    
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad
-import qualified Data.Set as Set    
-import qualified Control.Concurrent.Lock as Lock
+
+import qualified Data.Set as Set
+import qualified Data.Map as Map        
+import qualified Control.Concurrent.RLock as Lock
 import qualified Database.LevelDB.Base as LevelDb
 import qualified Data.Binary as Bin
 import qualified Data.Binary.Get as BinGet
@@ -71,12 +75,13 @@ instance Ord ChainHead where
     
 
 data Db = Db {
-      dbLock :: Lock.Lock
+      dbLock :: Lock.RLock
     , dbDataDir :: Path
     , dbTxIndex :: LevelDb.DB
     , dbBlocksIndex :: LevelDb.DB
     , dbHeads :: IORef (Set.Set ChainHead)
     , dbTransactions :: IORef (Set.Set Transaction)
+    , dbUnspentCache :: IORef (Map.Map Hash (Set.Set TxOutputRef))
       }
 
 
@@ -92,6 +97,7 @@ initDb dataDir =  do
   startHead <- ChainHead (blockHeader initialBlock) 1 (hash initialBlock) <$> now
   Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
          <*> pure blocksIndexDb <*> newIORef (Set.singleton startHead) <*> newIORef Set.empty
+         <*> newIORef Map.empty
 
 
 nextBlocks :: Db -> Hash -> IO (Set.Set Hash)
@@ -101,13 +107,13 @@ nextBlocks db prevBlockHash = do
 
 loadBlock :: Db -> Block -> IO ()
 loadBlock db block = do
-  pushBlockToHeads db block
+  pushBlockToRamState db block
 
 
 loadDb :: Db -> IO ()
 loadDb db =  Lock.with (dbLock db) $ do
     logInfo "loading database"
-    pushBlockNoLock db initialBlock
+    pushBlock db initialBlock
     continue (hash initialBlock)
     head <- longestHead db
     logInfo $ "loaded blocks, longest head is " ++ show (chainHeadLength head) 
@@ -159,14 +165,10 @@ chainLength db blockHash
         let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader block
         (+1) <$> chainLength db prevBlockHash
 
-isCoinbaseTransaction :: Transaction -> Bool    
-isCoinbaseTransaction (CoinbaseTransaction _) = True
-isCoinbaseTransaction _ = False
-
 resolveInputOutput :: Db -> TxInput -> IO (Maybe TxOutput)
 resolveInputOutput db (TxInput (TxOutputRef refTxId refOutputIdx)) =
     runMaybeT $ do
-      refTx <- MaybeT $ getDbTransactionNoLock db refTxId
+      refTx <- MaybeT $ getDbTransaction db refTxId
       liftMaybe $ (Set.toList $ txOutputs refTx) `at` (fromIntegral refOutputIdx)                          
 
 
@@ -179,117 +181,12 @@ transactionFee db (Transaction inputs outputs _) = runMaybeT $ do
     return $ totalInput - totalOutput
 
 maxCoinbaseReward :: Db -> [Transaction] -> IO (Maybe Int64)
-maxCoinbaseReward db txs = Lock.with (dbLock db) $ maxCoinbaseRewardNoLock db txs                          
-
-maxCoinbaseRewardNoLock :: Db -> [Transaction] -> IO (Maybe Int64)
-maxCoinbaseRewardNoLock db txs = runMaybeT $ do
+maxCoinbaseReward db txs = Lock.with (dbLock db) $ runMaybeT $ do
   feesOpt <- liftIO $ mapM (transactionFee db) txs
   fees <- liftMaybe $ sequence feesOpt 
   let baseReward = 50
   return $ baseReward + sum fees
 
-           
-
-
--- TODO: move verification away from here!
-
-verifyPrevBlockHashCorrect db block
-    | block == initialBlock = return ()
-    | otherwise = do
-  let prevHash = bhPrevBlockHeaderHash $ blockHeader block
-  prevBlockOpt <- liftIO $ loadBlockFromDisk db prevHash
-  guard (isJust prevBlockOpt) `mplus` left "wrong prev block hash"
-
-
-verifyBlockDifficulity db block = do
-  let prevHash = (bhPrevBlockHeaderHash $ blockHeader block)
-  prevBlocks <- liftIO $ getBlocksToHash db prevHash difficulityRecalculationBlocks
-  let expectedDifficulity = nextDifficulity prevBlocks
-  let actualDifficulity = blockDifficulity block
-  let stampedDifficulity = fromIntegral $ bhDifficulity $ blockHeader block
-  guard (stampedDifficulity == expectedDifficulity) `mplus` left "wrong stamped difficulity"
-  guard (actualDifficulity >= expectedDifficulity) `mplus` left "wrong difficulity"
-
-
-blocksForTimeAveraging = 10                         
-verifyBlockTimestamp db block = do
-  let blockTimestamp  = bhWallClockTime . blockHeader
-  lastBlocks <- liftIO $ getBlocksToHash db (hash block) blocksForTimeAveraging
-  case lastBlocks of
-    [] -> return ()
-    _ -> do
-      let avgTime = median $ map blockTimestamp lastBlocks
-      guard (blockTimestamp block >= avgTime) `mplus` left "block timestamp is incorrect, less than last avg"
-
-
-verifyTransactionSignature db tx =
-    case tx of
-      Transaction inputs outputs sig -> do
-              inputOutputsOptSeq <- liftIO $ mapM (resolveInputOutput db) (Set.toList inputs)
-              let inputOutputsOpt = sequence inputOutputsOptSeq
-              guard (isJust inputOutputsOpt)
-                        `mplus` left "can not resolve input's output for transaction"
-              let inputOutputs = fromJust inputOutputsOpt
-              let pubKey = outputPubKey $ head inputOutputs
-              guard (all (\o -> pubKey == outputPubKey o) inputOutputs)
-                        `mplus` left "all input pub keys should match"
-              guard (verifySignature sig pubKey (hash tx)) `mplus` left "transaction signature is incorrect"
-
-verifyTransactionTransaction db tx@(Transaction inputs outputs sig) = do
-  fee <- liftIO $ transactionFee db tx
-  guard (isJust fee) `mplus` left "transaction fee can not be calculated (absent input?)"
-  guard (fromJust fee >= 0) `mplus` left "transaction fee is below zero"
-  guard (length inputs > 0) `mplus` left "there are should be at least one transaction input"
-  guard (length outputs > 0) `mplus` left "there are should be at least one transaction output"
-  verifyTransactionSignature db tx
-verifyTransactionTransaction db _ = left "coinbase transaction is not allowed"
-                             
-
-verifyTransaction db block tx = 
-  case tx of
-    CoinbaseTransaction outputs -> do
-            guard (onlyOne isCoinbaseTransaction $ Set.toList $ blockTransactions block)
-                      `mplus` left "more than one coinbase per block"
-            guard (1 == length outputs)
-                      `mplus` left "more than one output in coinbase transaction"
-            expectedCoinbaseReward <- liftIO $ maxCoinbaseRewardNoLock db (Set.toList $ blockTransactions block)
-            guard (isJust expectedCoinbaseReward) `mplus` left "can not calculate or wrong coinbase reward"
-            guard ((outputAmount $ head $ Set.toList $ outputs) == fromJust expectedCoinbaseReward)
-                      `mplus` left "coinbase reward is incorrectly stamped"
-    Transaction inputs outputs sig -> verifyTransactionTransaction db tx
-
-
-verifyBlockTransactions db block = do
-  let txs = blockTransactions block
-  guard (hash txs == bhTransactionsHash (blockHeader block)) `mplus` left "wrong stamped transactions hash"
-  let allInputs = concatMap (\tx -> case tx of
-                                          CoinbaseTransaction _ -> []
-                                          _ -> Set.toList $ txInputs tx
-                            ) $ Set.toList txs
-  guard (all (\inp -> onlyOne (==inp) allInputs) allInputs) `mplus` left "input used more than once"
-  unspent <- liftIO $ unspentAt db (bhPrevBlockHeaderHash $ blockHeader block)
-  let spentOutputs = Set.fromList $ map inputOutputRef allInputs
-  guard (Set.isSubsetOf spentOutputs unspent) `mplus` left "double spend attempt"
-  mapM_ (\tx -> verifyTransaction db block tx
-                `mplus` (left $ "; in transaction" ++ show (transactionId block tx))) txs
-
-
-verifyBlock :: Db -> Block -> EitherT String IO [()]
-verifyBlock db block
-    | block == initialBlock = return [()] -- initial block is valid, even though it does not have prev block
-    | otherwise = do
-    sequence [ verifyPrevBlockHashCorrect db block
-             , verifyBlockDifficulity db block
-             , verifyBlockTimestamp db block
-             , verifyBlockTransactions db block] `mplus` (left $ "; in block" ++ (show $ hash block))
-
---- end of verification, move is somewhere elso!
-
-pushBlocks :: Db -> [Block] -> IO ()
-pushBlocks db blocks = mapM_ (pushBlock db) (reverse blocks) -- starting from oldest
-
-pushBlock :: Db -> Block -> IO Bool
-pushBlock db block = Lock.with (dbLock db) $ pushBlockNoLock db block
 
 
 consumeTransactions :: Db -> Block -> IO ()
@@ -299,22 +196,27 @@ consumeTransactions db block = do
   writeIORef (dbTransactions db) newTxs
 
                        
-pushBlockNoLock :: Db -> Block -> IO Bool
-pushBlockNoLock db block = do
-  verificationResult <- runEitherT $ verifyBlock db block
-  case  verificationResult of
-    Right _ -> do
+pushBlock :: Db -> Block -> IO Bool
+pushBlock db block = Lock.with (dbLock db) $ do
       logInfo $ "pushing block" ++ show (hash block)
       pushBlockToDisk db block
       consumeTransactions db block
-      pushBlockToHeads db block
-      return True
-    Left err -> do
-      logWarning $ "verification  pushing block failed: " ++ err
-      return False
+      pushBlockToRamState db block
+      return True                                                    -- TODO: smell
+
+
+updateUnspentCache :: Db -> Block -> IO ()
+updateUnspentCache db block = do
+  prevUnspent <- unspentAt db (bhPrevBlockHeaderHash $ blockHeader block)
+  let (income, spendings) = singleBlockUnspent block
+  let blockUnspent = Set.difference (Set.union prevUnspent income) spendings
+  oldCache <- readIORef (dbUnspentCache db)
+  let newCache = Map.insert (hash block) blockUnspent oldCache
+  writeIORef (dbUnspentCache db) newCache
+  
                        
-pushBlockToHeads :: Db -> Block -> IO ()
-pushBlockToHeads db block
+pushBlockToRamState :: Db -> Block -> IO ()
+pushBlockToRamState db block
     | block == initialBlock = return () -- already in heads! see initialization. refactor this shit
     | otherwise = do
     let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader $ block
@@ -332,6 +234,7 @@ pushBlockToHeads db block
                     let fixedHeads = Set.delete prevHead oldHeads
                     return $ Set.insert newHead fixedHeads
     writeIORef (dbHeads db) newHeads
+    updateUnspentCache db block
 
 
 
@@ -366,6 +269,8 @@ getBlocksFromHash db fromHash =
       s <- hash <$> chainHeadBlockHeader <$> longestHead db
       continue s []
 
+
+-- TODO: fixme - returns in incorrect order?
 getBlocksToHash :: Db -> Hash -> Int -> IO [Block]               
 getBlocksToHash db toHash amount
     | amount == 0 = return []
@@ -373,7 +278,7 @@ getBlocksToHash db toHash amount
     | otherwise = do
   blockOpt <- loadBlockFromDisk db toHash :: IO (Maybe Block)
   case blockOpt of
-    Just block -> do
+    Just block -> Lock.with (dbLock db) $ do
                   let prevHash = bhPrevBlockHeaderHash $ blockHeader block
                   prevBlocks <- getBlocksToHash db prevHash (amount - 1)
                   return (block : prevBlocks)
@@ -386,12 +291,11 @@ getTransactions db = Lock.with (dbLock db) $ do
                        readIORef $ dbTransactions db
 
 
-pushTransactions :: Db -> Set.Set Transaction -> IO (Either String ())
+pushTransactions :: Db -> Set.Set Transaction -> IO ()
 pushTransactions db newTransactions =
-    Lock.with (dbLock db) $ runEitherT $ do
-      mapM (verifyTransactionTransaction db) $ Set.toList newTransactions
-      oldTransactions <- liftIO $ readIORef (dbTransactions db)
-      liftIO $ writeIORef (dbTransactions db) (Set.union oldTransactions newTransactions)
+    Lock.with (dbLock db) $ do
+      oldTransactions <- readIORef (dbTransactions db)
+      writeIORef (dbTransactions db) (Set.union oldTransactions newTransactions)
 
 
 data TransactionRef = TransactionRef { txrefBlock :: Hash
@@ -399,11 +303,7 @@ data TransactionRef = TransactionRef { txrefBlock :: Hash
 instance Bin.Binary TransactionRef
 
 getDbTransaction :: Db -> TransactionId -> IO (Maybe Transaction)
-getDbTransaction db txHash = Lock.with (dbLock db) $ getDbTransactionNoLock db txHash
-    
-getDbTransactionNoLock :: Db -> TransactionId -> IO (Maybe Transaction)
-getDbTransactionNoLock db txId =
-  runMaybeT $ do
+getDbTransaction db txId = Lock.with (dbLock db) $ runMaybeT $ do
     txBin <- MaybeT $ liftIO $ LevelDb.get (dbTxIndex db) def (hashBs txId)
     let txref = BinGet.runGet Bin.get (BSL.fromStrict txBin) :: TransactionRef
     liftIO $ logInfo $ "got txRef" ++ show txref
@@ -425,31 +325,47 @@ lastNBlocks db n = do
 
 
 getNextDifficulity :: Db -> IO Difficulity
-getNextDifficulity db = Lock.with (dbLock db) $ getNextDifficulityNoLock db
-           
-getNextDifficulityNoLock :: Db -> IO Difficulity
-getNextDifficulityNoLock db = do
+getNextDifficulity db = Lock.with (dbLock db) $ do
   blocks <- lastNBlocks db difficulityRecalculationBlocks
   return $ nextDifficulity blocks
 
+
+queryUnspentCache :: Db -> Hash -> IO (Maybe (Set.Set TxOutputRef))
+queryUnspentCache db blockHash = do
+  cache <- readIORef (dbUnspentCache db)
+  return $ Map.lookup blockHash cache
+
+
+singleBlockUnspent :: Block -> (Set.Set TxOutputRef, Set.Set TxOutputRef)
+singleBlockUnspent block = 
+    let
+        txs = blockTransactions block
+        income = Set.fromList $ concatMap
+                 (\tx ->
+                      let enumeratedOutputs = (zip (Set.toList $ txOutputs tx) [0..])
+                      in map (\(o, n) -> TxOutputRef (transactionId block tx) n) enumeratedOutputs) txs
+        spendings = Set.fromList $ concatMap
+                    (\tx -> case tx of
+                              CoinbaseTransaction _ -> []
+                              _ -> Set.toList $ Set.map inputOutputRef $ txInputs tx) txs
+    in (income, spendings)
 
 unspentAt :: Db -> Hash -> IO (Set.Set TxOutputRef)
 unspentAt db uptoBlock =
     continue uptoBlock Set.empty Set.empty
     where continue h unspent spent
-              | h == hash initialBlock = return unspent
+              | h == hash initialBlock = return (Set.difference unspent spent)
               | otherwise = do
-            Just block <- loadBlockFromDisk db h
-            let txs = blockTransactions block
-            let income = Set.fromList $ concatMap (\tx ->
-                           let enumeratedOutputs = (zip (Set.toList $ txOutputs tx) [0..])
-                           in map (\(o, n) -> TxOutputRef (transactionId block tx) n) enumeratedOutputs) txs
-            let spendings = Set.fromList $ concatMap (\tx -> case tx of
-                                                CoinbaseTransaction _ -> []
-                                                _ -> Set.toList $ Set.map inputOutputRef $ txInputs tx) txs
-            let newUnspent = Set.difference (Set.union unspent income) (Set.union spent spendings)
-            let newSpent = Set.difference (Set.union spent spendings) (Set.union unspent income)
-            continue (bhPrevBlockHeaderHash $ blockHeader block) newUnspent newSpent
+            cached <- queryUnspentCache db h
+            case cached of
+              Just val -> return (Set.difference (Set.union unspent val) spent)
+              Nothing -> do
+                          Just block <- loadBlockFromDisk db h
+                          let txs = blockTransactions block
+                          let (income, spendings) = singleBlockUnspent block
+                          let newUnspent = Set.difference (Set.union unspent income) (Set.union spent spendings)
+                          let newSpent = Set.difference (Set.union spent spendings) (Set.union unspent income)
+                          continue (bhPrevBlockHeaderHash $ blockHeader block) newUnspent newSpent
 
 
 balanceAt :: Db -> Hash -> PubKey -> IO (Set.Set TxOutputRef)

@@ -50,7 +50,10 @@ library
                    , Bce.Miner
                    , Bce.TimeStamp
                    , Bce.DbFs
+                   , Bce.VerifiedDb
+                   , Bce.BlockChainVerification                   
                    , Bce.Logger
+
 
 
     default-language:    Haskell2010    

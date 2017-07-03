@@ -14,6 +14,8 @@
 *** DONE balance request
 ** DONE implement balance request
 ** DONE check double spend!
+** TODO fix no lock hell
+** TODO optimize brag/ask - grow chain at N most, do not send whole blockchain because node is syncing from scratch
 ** TODO implement transactions signature
 ** TODO cover shit with unit tests
 ** TODO limit fork depth
@@ -24,7 +26,6 @@
 ** TODO command line args parsing
 ** TODO persistent storage for p2p peers
 ** TODO dead head pruning
-** TODO optimize brag/ask - grow chain at N most, do not send whole blockchain because node is syncing from scratch
 ** TODO improve p2p again - 2 connections to same peer should not be possible
 ** TODO move verification away from db
 ** TODO select memory hard pow

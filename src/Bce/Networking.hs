@@ -4,12 +4,14 @@ module Bce.Networking where
 
 import qualified Bce.BlockChain as BlockChain
 import qualified Bce.DbFs as Db
+import qualified Bce.VerifiedDb as VerifiedDb
 import qualified Bce.P2p as P2p
 import Bce.Logger    
 import Bce.Hash
 import Bce.BlockChainHash
 import Bce.Util
 import Bce.TimeStamp
+import Bce.InitialBlock    
 import Bce.BlockChainSerialization    
 
 import qualified Data.Binary as Bin
@@ -48,31 +50,42 @@ decodeMessage bs = BinGet.runGet Bin.get $ BSL.fromStrict bs
 
 --
 
+askSkipInterval = 16
+
 handlePeerMessage :: Network -> PeerAddress -> NetworkMessage -> IO ()
 handlePeerMessage net peer msg = do
     let db = networkDb net
     logDebug $ "got message " ++ show msg
     case msg of
       Brag braggedLen -> do
-               logDebug $ "saw bragger with length!" ++ show braggedLen
                (dbLen, topBlock) <- Db.getLongestHead db
                if dbLen < braggedLen
-               then send net peer $ Ask $ hash topBlock
+               then do
+                 logInfo $ "saw bragger with length!" ++ show braggedLen
+                 send net peer $ Ask $ hash topBlock
                else return ()
       Ask fromHash -> do
                blocksOpt <- Db.getBlocksFromHash (networkDb net) fromHash
                case blocksOpt of
-                 Just blocks -> send net peer $ Propose blocks
-                 Nothing -> send net peer $ Dunno fromHash
+                 Just blocks -> do
+                     logInfo $ "proposing blocks from " ++ show fromHash
+                     send net peer $ Propose blocks
+                 Nothing -> do
+                     logInfo $ "dunno from hash" ++ show fromHash
+                     send net peer $ Dunno fromHash
       Propose blocks -> do
         logDebug $ "pushing blocks to chain" ++ show (length blocks)
-        Db.pushBlocks (networkDb net) blocks
+        VerifiedDb.verifyAndPushBlocks (networkDb net) blocks
       Dunno fromHash -> do
-               prevBlockOpt <- Db.getBlock db fromHash
-               case prevBlockOpt of
-                 Just prevBlock -> send net peer $ Ask
-                                   $ (BlockChain.bhPrevBlockHeaderHash $ BlockChain.blockHeader prevBlock)
-                 Nothing -> return ()
+               oldBlocks <- Db.getBlocksToHash db fromHash askSkipInterval
+               case oldBlocks of
+                 [] -> do
+                     logInfo $ "got dunno; asking from initial block"
+                     send net peer $ Ask (hash initialBlock)
+                 _  -> do
+                   let askFrom = (BlockChain.bhPrevBlockHeaderHash $ BlockChain.blockHeader $ head oldBlocks) 
+                   logInfo $ "got dunno; asking from" ++ show askFrom
+                   send net peer $ Ask askFrom
       PushTransactions transactions -> do
         Db.pushTransactions (networkDb net) transactions
         return ()

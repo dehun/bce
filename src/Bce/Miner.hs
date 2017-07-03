@@ -9,6 +9,7 @@ import Bce.Difficulity
 import Bce.TimeStamp
 import Bce.Logger
 import qualified Bce.DbFs as Db
+import qualified Bce.VerifiedDb as VerifiedDb    
 
 import Data.Either    
 import Debug.Trace
@@ -53,7 +54,7 @@ growChain db ownerKey timer = do
       (_, topBlock) <- Db.getLongestHead db
       next <- tryGenerateBlock time rnd <$> pure topBlock <*> pure txs  <*> Db.getNextDifficulity db
       case next of
-        Just blk -> Db.pushBlock db blk
+        Just blk -> VerifiedDb.verifyAndPushBlock db blk
         Nothing -> return False
     if generated
     then do
