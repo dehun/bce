@@ -98,7 +98,11 @@ nextBlocks :: Db -> Hash -> IO (Set.Set Hash)
 nextBlocks db prevBlockHash = do
   nextBlocksBs <- LevelDb.get (dbBlocksIndex db) def (hashBs prevBlockHash) 
   return $ fromMaybe Set.empty $ (BinGet.runGet Bin.get <$> (BSL.fromStrict <$> nextBlocksBs))
-      
+
+loadBlock :: Db -> Block -> IO ()
+loadBlock db block = do
+  pushBlockToHeads db block
+
 
 loadDb :: Db -> IO ()
 loadDb db =  Lock.with (dbLock db) $ do
@@ -111,7 +115,7 @@ loadDb db =  Lock.with (dbLock db) $ do
             nextBlocksHashes <- Set.toList <$> nextBlocks db fromHash
             nextBlocks <- catMaybes <$> mapM (loadBlockFromDisk db) nextBlocksHashes
             logDebug $ "loading " ++ show nextBlocksHashes
-            mapM_ (\nb -> pushBlockNoLock db nb)  nextBlocks
+            mapM_ (\nb -> loadBlock db nb)  nextBlocks
             heads <- readIORef (dbHeads db) 
             mapM_ (\b -> continue (hash  b)) nextBlocks
 
