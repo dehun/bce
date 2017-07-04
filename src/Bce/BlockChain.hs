@@ -52,6 +52,7 @@ data Block = Block { blockHeader:: BlockHeader
 
 data BlockChain = BlockChain { blockChainBlocks :: [Block] } deriving (Show, Eq, Generic)
 
-
-
                 
+isCoinbaseTransaction :: Transaction -> Bool    
+isCoinbaseTransaction (CoinbaseTransaction _) = True
+isCoinbaseTransaction _ = False

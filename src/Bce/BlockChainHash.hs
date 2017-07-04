@@ -53,6 +53,9 @@ instance Hashable PrivKey where hash (PrivKey bs) = hash bs
 transactionId :: Block -> Transaction -> TransactionId
 transactionId block tx = hash $ mconcat $ map hashBs [hash block, hash tx]
 
+blockId :: Block -> BlockId
+blockId = hash 
+
 -- TODO: move this away!
 instance Ord Transaction where
     compare = comparing show

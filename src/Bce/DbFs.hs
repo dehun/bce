@@ -5,8 +5,8 @@ module Bce.DbFs
     , initDb
     , loadDb
     , pushBlock
-    , getBlocksFromHash
-    , getBlocksToHash
+    , getBlocksFrom
+    , getBlocksTo
     , getLongestHead
     , getBlock
     , getTransactions
@@ -262,10 +262,10 @@ getLongestHead db = Lock.with (dbLock db) $ do
          
         
 -- TODO: use next blocks and longest head (we have branches)
-getBlocksFromHash :: Db -> Hash -> IO (Maybe [Block])
-getBlocksFromHash db fromHash =
+getBlocksFrom :: Db -> BlockId -> IO (Maybe [Block])
+getBlocksFrom db fromBlockId =
     let continue bh acc
-            | bh == fromHash = return $ Just $ reverse acc
+            | bh == fromBlockId = return $ Just $ reverse acc
             | otherwise = do
                  b <- loadBlockFromDisk db bh
                  case b of
@@ -278,17 +278,16 @@ getBlocksFromHash db fromHash =
       continue s []
 
 
--- TODO: fixme - returns in incorrect order?
-getBlocksToHash :: Db -> Hash -> Int -> IO [Block]               
-getBlocksToHash db toHash amount
+getBlocksTo :: Db -> BlockId -> Int -> IO [Block]               
+getBlocksTo db toBlockId amount
     | amount == 0 = return []
-    | toHash == hash initialBlock = return []
+    | toBlockId == hash initialBlock = return []
     | otherwise = do
-  blockOpt <- loadBlockFromDisk db toHash :: IO (Maybe Block)
+  blockOpt <- loadBlockFromDisk db toBlockId :: IO (Maybe Block)
   case blockOpt of
     Just block -> Lock.with (dbLock db) $ do
                   let prevHash = bhPrevBlockHeaderHash $ blockHeader block
-                  prevBlocks <- getBlocksToHash db prevHash (amount - 1)
+                  prevBlocks <- getBlocksTo db prevHash (amount - 1)
                   return (block : prevBlocks)
     Nothing -> return [] 
      
@@ -329,7 +328,7 @@ pushDbTransaction db tx block =
 lastNBlocks :: Db -> Int -> IO [Block]
 lastNBlocks db n = do
     upto <- hash <$> chainHeadBlockHeader <$> longestHead db
-    getBlocksToHash db upto n
+    getBlocksTo db upto n
 
 
 getNextDifficulity :: Db -> IO Difficulity

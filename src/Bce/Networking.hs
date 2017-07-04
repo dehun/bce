@@ -75,7 +75,7 @@ handlePeerMessage net peer msg = do
                    liftIO $ send net peer $ Ask askFrom
                else return ()
       Ask fromHash -> do
-               blocksOpt <- liftIO $ Db.getBlocksFromHash (networkDb net) fromHash
+               blocksOpt <- liftIO $ Db.getBlocksFrom (networkDb net) fromHash
                case blocksOpt of
                  Just blocks -> do
                      liftIO $ logInfo $ "proposing blocks from " ++ show fromHash
@@ -96,7 +96,7 @@ handlePeerMessage net peer msg = do
                  Just oldSyncState -> do
                      let askSkipInterval = 2 ^ (networkBlocksSyncAccelerationKoef oldSyncState)
                      let oldFromHash = networkBlockSyncLastAsk oldSyncState
-                     oldBlocks <- liftIO $ Db.getBlocksToHash db oldFromHash askSkipInterval
+                     oldBlocks <- liftIO $ Db.getBlocksTo db oldFromHash askSkipInterval
                      let newFromHash = case oldBlocks of
                                         [] -> traceShowId $ hash initialBlock
                                         _ -> hash $ last oldBlocks

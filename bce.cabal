@@ -53,6 +53,7 @@ library
                    , Bce.VerifiedDb
                    , Bce.BlockChainVerification                   
                    , Bce.Logger
+                   , Bce.Cache
 
 
 

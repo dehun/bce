@@ -35,7 +35,7 @@ verifyPrevBlockHashCorrect db block
 
 verifyBlockDifficulity db block = do
   let prevHash = (bhPrevBlockHeaderHash $ blockHeader block)
-  prevBlocks <- liftIO $ Db.getBlocksToHash db prevHash difficulityRecalculationBlocks
+  prevBlocks <- liftIO $ Db.getBlocksTo db prevHash difficulityRecalculationBlocks
   let expectedDifficulity = nextDifficulity prevBlocks
   let actualDifficulity = blockDifficulity block
   let stampedDifficulity = fromIntegral $ bhDifficulity $ blockHeader block
@@ -46,7 +46,7 @@ verifyBlockDifficulity db block = do
 blocksForTimeAveraging = 10                         
 verifyBlockTimestamp db block = do
   let blockTimestamp  = bhWallClockTime . blockHeader
-  lastBlocks <- liftIO $ Db.getBlocksToHash db (hash block) blocksForTimeAveraging
+  lastBlocks <- liftIO $ Db.getBlocksTo db (hash block) blocksForTimeAveraging
   case lastBlocks of
     [] -> return ()
     _ -> do
@@ -77,12 +77,6 @@ verifyTransactionTransaction db tx@(Transaction inputs outputs sig) = do
 verifyTransactionTransaction db _ = left "coinbase transaction is not allowed"
 
 
-isCoinbaseTransaction :: Transaction -> Bool    
-isCoinbaseTransaction (CoinbaseTransaction _) = True
-isCoinbaseTransaction _ = False
-
-                                    
-
 verifyTransaction db block tx = 
   case tx of
     CoinbaseTransaction outputs -> do
@@ -110,6 +104,11 @@ verifyBlockTransactions db block = do
   guard (Set.isSubsetOf spentOutputs unspent) `mplus` left "double spend attempt"
   mapM_ (\tx -> verifyTransaction db block tx
                 `mplus` (left $ "; in transaction" ++ show (transactionId block tx))) txs
+
+
+verifyBlockDoesNoDoHashCollision db block = do
+  alreadyExists <- liftIO $  Db.isBlockExists db (blockId block)
+  guard (alreadyExists) `mplus` left "block already exists, or block id collides"
 
 
 verifyBlock :: Db.Db -> Block -> EitherT String IO [()]
