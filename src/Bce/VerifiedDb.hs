@@ -18,7 +18,8 @@ verifyAndPushBlocks :: Db.Db -> [Block] -> IO ()
 verifyAndPushBlocks db blocks = mapM_ (verifyAndPushBlock db) (reverse blocks) -- starting from oldest
 
 verifyAndPushBlock :: Db.Db -> Block -> IO Bool
-verifyAndPushBlock db block = do
+verifyAndPushBlock db block =
+  Db.transactionally db $ do
     verificationResult <- runEitherT $ verifyBlock db block
     case  verificationResult of
       Right _ -> do
@@ -29,7 +30,7 @@ verifyAndPushBlock db block = do
 
 
 verifyAndPushTransactions :: Db.Db -> Set.Set Transaction -> IO (Either String ())
-verifyAndPushTransactions db txs = runEitherT $ do
+verifyAndPushTransactions db txs = Db.transactionally db $ runEitherT $ do
   mapM (verifyTransactionTransaction db) $ Set.toList txs
   liftIO $ Db.pushTransactions db txs
 

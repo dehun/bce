@@ -19,6 +19,7 @@ module Bce.DbFs
     , transactionFee
     , resolveInputOutput
     , isBlockExists
+    , transactionally
     )
         where
 
@@ -32,6 +33,7 @@ import Bce.Difficulity
 import Bce.Util
 import Bce.Logger
 import Bce.Crypto
+import Bce.Cache    
 
 import GHC.Generics (Generic)
 import GHC.Int(Int64, Int32)
@@ -81,9 +83,14 @@ data Db = Db {
     , dbBlocksIndex :: LevelDb.DB
     , dbHeads :: IORef (Set.Set ChainHead)
     , dbTransactions :: IORef (Set.Set Transaction)
-    , dbUnspentCache :: IORef (Map.Map Hash (Set.Set TxOutputRef))
+    , dbUnspentCache :: Cache BlockId (Set.Set TxOutputRef)
       }
 
+
+transactionally :: Db -> IO b -> IO b
+transactionally db fx = Lock.with (dbLock db) fx
+
+maxCachedUnspent = 100                        
 
 initDb :: Path -> IO Db
 initDb dataDir =  do
@@ -97,7 +104,7 @@ initDb dataDir =  do
   startHead <- ChainHead (blockHeader initialBlock) 1 (hash initialBlock) <$> now
   Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
          <*> pure blocksIndexDb <*> newIORef (Set.singleton startHead) <*> newIORef Set.empty
-         <*> newIORef Map.empty
+         <*> createCache maxCachedUnspent
 
 
 nextBlocks :: Db -> Hash -> IO (Set.Set Hash)
@@ -213,9 +220,7 @@ updateUnspentCache db block = do
   prevUnspent <- unspentAt db (bhPrevBlockHeaderHash $ blockHeader block)
   let (income, spendings) = singleBlockUnspent block
   let blockUnspent = Set.difference (Set.union prevUnspent income) spendings
-  oldCache <- readIORef (dbUnspentCache db)
-  let newCache = Map.insert (hash block) blockUnspent oldCache
-  writeIORef (dbUnspentCache db) newCache
+  const () <$> cacheValue (hash block) blockUnspent (dbUnspentCache db)
   
                        
 pushBlockToRamState :: Db -> Block -> IO ()
@@ -333,12 +338,6 @@ getNextDifficulity db = Lock.with (dbLock db) $ do
   return $ nextDifficulity blocks
 
 
-queryUnspentCache :: Db -> Hash -> IO (Maybe (Set.Set TxOutputRef))
-queryUnspentCache db blockHash = do
-  cache <- readIORef (dbUnspentCache db)
-  return $ Map.lookup blockHash cache
-
-
 singleBlockUnspent :: Block -> (Set.Set TxOutputRef, Set.Set TxOutputRef)
 singleBlockUnspent block = 
     let
@@ -359,7 +358,7 @@ unspentAt db uptoBlock =
     where continue h unspent spent
               | h == hash initialBlock = return (Set.difference unspent spent)
               | otherwise = do
-            cached <- queryUnspentCache db h
+            cached <- queryCache h (dbUnspentCache db)
             case cached of
               Just val -> return (Set.difference (Set.union unspent val) spent)
               Nothing -> do

@@ -13,7 +13,8 @@ import GHC.Int(Int64, Int32)
 import GHC.Generics (Generic)
 
 
-type TransactionId = Hash    
+type TransactionId = Hash
+type BlockId = Hash        
 
 data TxOutput = TxOutput { outputAmount :: Int64
                          , outputPubKey :: PubKey
