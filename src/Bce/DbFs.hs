@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 module Bce.DbFs
     ( Db
+    , dbDataDir
     , initDb
     , loadDb
     , pushBlock
@@ -106,7 +107,6 @@ initDb dataDir =  do
          <*> pure blocksIndexDb <*> newIORef (Set.singleton startHead) <*> newIORef Set.empty
          <*> createCache maxCachedUnspent
 
-
 nextBlocks :: Db -> Hash -> IO (Set.Set Hash)
 nextBlocks db prevBlockHash = do
   nextBlocksBs <- LevelDb.get (dbBlocksIndex db) def (hashBs prevBlockHash) 
@@ -208,7 +208,7 @@ consumeTransactions db block = do
                        
 pushBlock :: Db -> Block -> IO Bool
 pushBlock db block = Lock.with (dbLock db) $ do
-      logInfo $ "pushing block" ++ show (hash block)
+      logDebug $ "pushing block" ++ show (hash block)
       pushBlockToDisk db block
       consumeTransactions db block
       pushBlockToRamState db block
@@ -287,8 +287,8 @@ getBlocksTo db toBlockId amount
   case blockOpt of
     Just block -> Lock.with (dbLock db) $ do
                   let prevHash = bhPrevBlockHeaderHash $ blockHeader block
-                  prevBlocks <- getBlocksTo db prevHash (amount - 1)
-                  return (block : prevBlocks)
+                  prevBlocks <- getBlocksTo db prevHash $ amount - 1
+                  return $ block : prevBlocks
     Nothing -> return [] 
      
     

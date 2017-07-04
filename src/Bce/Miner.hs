@@ -60,7 +60,7 @@ growChain db ownerKey timer = do
     then do
       (headLength, topBlock) <- Db.getLongestHead db
       nextDiff <- Db.getNextDifficulity db
-      logInfo $ show time ++ " got chain of length " ++ show headLength
+      logDebug $ show time ++ " got chain of length " ++ show headLength
                   ++ "; block difficulity is " ++ (show $ blockDifficulity topBlock)
                   ++ "; next difficulity is " ++ (show nextDiff)
                   ++ "; blockhash is " ++ (show $ hash topBlock)

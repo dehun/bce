@@ -126,7 +126,8 @@ networkListener net = do
       let loop = do
             msg <- liftIO $ atomically $ readTChan chan
             case msg of
-              P2p.PeerDisconnected peer ->
+              P2p.PeerDisconnected peer -> do
+                  liftIO $ logInfo $ "peer disconnected " ++ show peer
                   modify (\oldState -> oldState{networkListenerActiveSyncs=
                                                     Map.delete peer $ networkListenerActiveSyncs oldState})
               P2p.PeerMessage peer bs -> handlePeerMessage net peer $ decodeMessage bs

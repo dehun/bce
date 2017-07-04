@@ -108,7 +108,7 @@ verifyBlockTransactions db block = do
 
 verifyBlockDoesNoDoHashCollision db block = do
   alreadyExists <- liftIO $  Db.isBlockExists db (blockId block)
-  guard (alreadyExists) `mplus` left "block already exists, or block id collides"
+  guard (not alreadyExists) `mplus` left "block already exists, or block id collides"
 
 
 verifyBlock :: Db.Db -> Block -> EitherT String IO [()]
