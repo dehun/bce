@@ -36,6 +36,7 @@ main = do
   Rest.start db (read restApiPort)
   logInfo $ "starting mining"
   let ownerKey = PubKey $ BS.pack [0xde, 0xad]
+  forever yield
   Miner.mineForever db ownerKey networkTimer
 
   

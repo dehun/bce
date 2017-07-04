@@ -39,7 +39,7 @@ data Network = Network { networkP2p :: P2p.P2p
 data NetworkMessage = Brag Int
                     | Ask Hash
                     | Propose [BlockChain.Block]
-                    | Dunno Hash
+                    | Dunno
                     | PushTransactions (Set.Set BlockChain.Transaction)
                       deriving (Show, Generic)
 instance Bin.Binary NetworkMessage    
@@ -50,6 +50,8 @@ encodeMessage msg = BSL.toStrict $ BinPut.runPut $ Bin.put msg
 
 decodeMessage :: BS.ByteString -> NetworkMessage
 decodeMessage bs = BinGet.runGet Bin.get $ BSL.fromStrict bs
+
+maxBlocksSyncBatch = 50
 
 handlePeerMessage :: Network -> PeerAddress -> NetworkMessage -> StateT NetworkListenerState IO ()
 handlePeerMessage net peer msg = do
@@ -66,53 +68,56 @@ handlePeerMessage net peer msg = do
                  then liftIO $ logDebug "already syncing from that bragger"
                  else do
                    liftIO $ logInfo $  "starting sync from " ++ show peer
-                   let newSync = NetworkBlocksSyncState 1
+                   let askFrom = hash topBlock
+                   let newSync = NetworkBlocksSyncState 1 askFrom
                    let ns = s{networkListenerActiveSyncs=Map.insert peer newSync $ networkListenerActiveSyncs s}
                    put ns
-                   liftIO $ send net peer $ Ask $ hash topBlock
+                   liftIO $ send net peer $ Ask askFrom
                else return ()
       Ask fromHash -> do
                blocksOpt <- liftIO $ Db.getBlocksFromHash (networkDb net) fromHash
                case blocksOpt of
                  Just blocks -> do
                      liftIO $ logInfo $ "proposing blocks from " ++ show fromHash
-                     liftIO $ send net peer $ Propose blocks
+                     liftIO $ send net peer $ Propose $ take maxBlocksSyncBatch $ blocks
                  Nothing -> do
                      liftIO $ logInfo $ "dunno from hash" ++ show fromHash
-                     liftIO $ send net peer $ Dunno fromHash
+                     liftIO $ send net peer $ Dunno
       Propose blocks -> do
                modify (\oldState -> oldState{networkListenerActiveSyncs=
                                                  Map.delete peer $ networkListenerActiveSyncs oldState})
                liftIO $ logDebug $ "pushing blocks to chain" ++ show (length blocks)
                liftIO $ VerifiedDb.verifyAndPushBlocks (networkDb net) blocks
-      Dunno fromHash -> do
+      Dunno -> do
                oldState <- get
                let oldSyncStateOpt = Map.lookup peer $ networkListenerActiveSyncs oldState
                case oldSyncStateOpt of
                  Nothing -> liftIO $ logWarning $ "got dunno for unstarted sync from "  ++ show peer
                  Just oldSyncState -> do
-                     let newSyncState = oldSyncState{networkBlocksSyncAccelerationKoef =
-                                                         1 + networkBlocksSyncAccelerationKoef oldSyncState}
-                     put oldState{networkListenerActiveSyncs = Map.insert peer newSyncState
-                                  $ networkListenerActiveSyncs oldState}
                      let askSkipInterval = 2 ^ (networkBlocksSyncAccelerationKoef oldSyncState)
-                     oldBlocks <- liftIO $ Db.getBlocksToHash db fromHash askSkipInterval
-                     case oldBlocks of
-                       [] -> do
-                          liftIO $ logInfo $ "got dunno; asking from initial block"
-                          liftIO $ send net peer $ Ask (hash initialBlock)
-                       _  -> do
-                          let askFrom = BlockChain.bhPrevBlockHeaderHash
-                                        $ BlockChain.blockHeader $ last oldBlocks
-                          liftIO $ logInfo $ "got dunno; asking from" ++ show askFrom
+                     let oldFromHash = networkBlockSyncLastAsk oldSyncState
+                     oldBlocks <- liftIO $ Db.getBlocksToHash db oldFromHash askSkipInterval
+                     let newFromHash = case oldBlocks of
+                                        [] -> traceShowId $ hash initialBlock
+                                        _ -> hash $ last oldBlocks
+                     let newSyncState = oldSyncState{ networkBlocksSyncAccelerationKoef =
+                                                         1 + networkBlocksSyncAccelerationKoef oldSyncState
+                                                    , networkBlockSyncLastAsk = newFromHash }
+                     put oldState{networkListenerActiveSyncs=Map.insert peer newSyncState
+                                                              $ networkListenerActiveSyncs oldState}
+                     liftIO $ logInfo $ "got dunno; asking from" ++ show newFromHash
                                      ++ " with skip " ++ show askSkipInterval
-                          liftIO $ send net peer $ Ask askFrom
+                     liftIO $ send net peer $ Ask newFromHash
       PushTransactions transactions -> do
         liftIO $ VerifiedDb.verifyAndPushTransactions (networkDb net) transactions
         return ()
 
-data NetworkBlocksSyncState = NetworkBlocksSyncState { networkBlocksSyncAccelerationKoef :: Int } deriving (Show)
-data NetworkListenerState = NetworkListenerState { networkListenerActiveSyncs :: Map.Map PeerAddress NetworkBlocksSyncState } deriving (Show)
+
+data NetworkBlocksSyncState = NetworkBlocksSyncState { networkBlocksSyncAccelerationKoef :: Int
+                                                     , networkBlockSyncLastAsk :: Hash } deriving (Show)
+data NetworkListenerState = NetworkListenerState {
+      networkListenerActiveSyncs :: Map.Map PeerAddress NetworkBlocksSyncState } deriving (Show)
+
 
 networkListener :: Network -> IO ()
 networkListener net = do

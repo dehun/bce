@@ -32,7 +32,7 @@ instance Read PrivKey where
                           then []
                           else [(PrivKey d, BS.unpack r)]                            
                                
-type Signature = BS.ByteString    
+type Signature = BS.ByteString
 
 -- TODO: implement me
 sign :: Hash -> PrivKey -> Signature
