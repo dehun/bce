@@ -15,7 +15,8 @@ import Bce.InitialBlock
 import Bce.BlockChainSerialization    
 
 import qualified Data.Binary as Bin
-import qualified Data.Set as Set    
+import qualified Data.Set as Set
+import qualified Data.Map as Map        
 import GHC.Generics (Generic)
 import qualified Data.Binary.Get as BinGet
 import qualified Data.Binary.Put as BinPut
@@ -26,6 +27,8 @@ import Data.Monoid
 import Debug.Trace
 import Control.Concurrent    
 import Control.Concurrent.STM
+import Control.Monad.Trans
+import Control.Monad.Trans.State        
 
 
 type PeerAddress = P2p.PeerAddress    
@@ -48,60 +51,82 @@ encodeMessage msg = BSL.toStrict $ BinPut.runPut $ Bin.put msg
 decodeMessage :: BS.ByteString -> NetworkMessage
 decodeMessage bs = BinGet.runGet Bin.get $ BSL.fromStrict bs
 
---
-
-askSkipInterval = 16
-
-handlePeerMessage :: Network -> PeerAddress -> NetworkMessage -> IO ()
+handlePeerMessage :: Network -> PeerAddress -> NetworkMessage -> StateT NetworkListenerState IO ()
 handlePeerMessage net peer msg = do
     let db = networkDb net
-    logDebug $ "got message " ++ show msg
+    liftIO $ logDebug $ "got message " ++ show msg
     case msg of
       Brag braggedLen -> do
-               (dbLen, topBlock) <- Db.getLongestHead db
+               (dbLen, topBlock) <- liftIO $ Db.getLongestHead db
                if dbLen < braggedLen
                then do
-                 logInfo $ "saw bragger with length!" ++ show braggedLen
-                 send net peer $ Ask $ hash topBlock
+                 liftIO $ logInfo $ "saw bragger with length!" ++ show braggedLen
+                 s <- get
+                 if Map.member peer (networkListenerActiveSyncs s)
+                 then liftIO $ logDebug "already syncing from that bragger"
+                 else do
+                   liftIO $ logInfo $  "starting sync from " ++ show peer
+                   let newSync = NetworkBlocksSyncState 1
+                   let ns = s{networkListenerActiveSyncs=Map.insert peer newSync $ networkListenerActiveSyncs s}
+                   put ns
+                   liftIO $ send net peer $ Ask $ hash topBlock
                else return ()
       Ask fromHash -> do
-               blocksOpt <- Db.getBlocksFromHash (networkDb net) fromHash
+               blocksOpt <- liftIO $ Db.getBlocksFromHash (networkDb net) fromHash
                case blocksOpt of
                  Just blocks -> do
-                     logInfo $ "proposing blocks from " ++ show fromHash
-                     send net peer $ Propose blocks
+                     liftIO $ logInfo $ "proposing blocks from " ++ show fromHash
+                     liftIO $ send net peer $ Propose blocks
                  Nothing -> do
-                     logInfo $ "dunno from hash" ++ show fromHash
-                     send net peer $ Dunno fromHash
+                     liftIO $ logInfo $ "dunno from hash" ++ show fromHash
+                     liftIO $ send net peer $ Dunno fromHash
       Propose blocks -> do
-        logDebug $ "pushing blocks to chain" ++ show (length blocks)
-        VerifiedDb.verifyAndPushBlocks (networkDb net) blocks
+               modify (\oldState -> oldState{networkListenerActiveSyncs=
+                                                 Map.delete peer $ networkListenerActiveSyncs oldState})
+               liftIO $ logDebug $ "pushing blocks to chain" ++ show (length blocks)
+               liftIO $ VerifiedDb.verifyAndPushBlocks (networkDb net) blocks
       Dunno fromHash -> do
-               oldBlocks <- Db.getBlocksToHash db fromHash askSkipInterval
-               case oldBlocks of
-                 [] -> do
-                     logInfo $ "got dunno; asking from initial block"
-                     send net peer $ Ask (hash initialBlock)
-                 _  -> do
-                   let askFrom = (BlockChain.bhPrevBlockHeaderHash $ BlockChain.blockHeader $ head oldBlocks) 
-                   logInfo $ "got dunno; asking from" ++ show askFrom
-                   send net peer $ Ask askFrom
+               oldState <- get
+               let oldSyncStateOpt = Map.lookup peer $ networkListenerActiveSyncs oldState
+               case oldSyncStateOpt of
+                 Nothing -> liftIO $ logWarning $ "got dunno for unstarted sync from "  ++ show peer
+                 Just oldSyncState -> do
+                     let newSyncState = oldSyncState{networkBlocksSyncAccelerationKoef =
+                                                         1 + networkBlocksSyncAccelerationKoef oldSyncState}
+                     put oldState{networkListenerActiveSyncs = Map.insert peer newSyncState
+                                  $ networkListenerActiveSyncs oldState}
+                     let askSkipInterval = 2 ^ (networkBlocksSyncAccelerationKoef oldSyncState)
+                     oldBlocks <- liftIO $ Db.getBlocksToHash db fromHash askSkipInterval
+                     case oldBlocks of
+                       [] -> do
+                          liftIO $ logInfo $ "got dunno; asking from initial block"
+                          liftIO $ send net peer $ Ask (hash initialBlock)
+                       _  -> do
+                          let askFrom = BlockChain.bhPrevBlockHeaderHash
+                                        $ BlockChain.blockHeader $ last oldBlocks
+                          liftIO $ logInfo $ "got dunno; asking from" ++ show askFrom
+                                     ++ " with skip " ++ show askSkipInterval
+                          liftIO $ send net peer $ Ask askFrom
       PushTransactions transactions -> do
-        Db.pushTransactions (networkDb net) transactions
+        liftIO $ VerifiedDb.verifyAndPushTransactions (networkDb net) transactions
         return ()
+
+data NetworkBlocksSyncState = NetworkBlocksSyncState { networkBlocksSyncAccelerationKoef :: Int } deriving (Show)
+data NetworkListenerState = NetworkListenerState { networkListenerActiveSyncs :: Map.Map PeerAddress NetworkBlocksSyncState } deriving (Show)
 
 networkListener :: Network -> IO ()
 networkListener net = do
       chan <- atomically $ dupTChan $ P2p.p2pRecvChan $ networkP2p net
+      let initialState = NetworkListenerState Map.empty
       let loop = do
-            msg <- atomically $ readTChan chan
+            msg <- liftIO $ atomically $ readTChan chan
             case msg of
-              P2p.PeerDisconnected peer -> do
-                        return ()
-              P2p.PeerMessage peer bs -> do
-                  handlePeerMessage net peer $ decodeMessage bs
-            loop
-      loop
+              P2p.PeerDisconnected peer ->
+                  modify (\oldState -> oldState{networkListenerActiveSyncs=
+                                                    Map.delete peer $ networkListenerActiveSyncs oldState})
+              P2p.PeerMessage peer bs -> handlePeerMessage net peer $ decodeMessage bs
+            loop 
+      evalStateT loop initialState
 
 bragger :: Network -> IO ()
 bragger net =
