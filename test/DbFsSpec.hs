@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
 module DbFsSpec where
 
 import qualified Bce.DbFs as Db
@@ -39,7 +38,7 @@ flushDb db = do
 withDb :: String -> (Db.Db -> IO()) -> IO ()
 withDb path = bracket (Db.initDb path) flushDb
 
-unexistingBlockId = Hash BS.empty 
+unexistingBlockId = hash "does not exist"
 
 spec :: Spec
 spec = do
@@ -51,7 +50,9 @@ spec = do
                    Db.getBlocksFrom db (blockId initialBlock) `shouldReturn` Just []
            it "empty database have only one unspent" $ \db -> do
                    Db.unspentAt db (blockId initialBlock)
-                         `shouldReturn` Set.singleton (TxOutputRef (transactionId initialBlock (head $ Set.toList $ blockTransactions initialBlock)) 0)                     
+                         `shouldReturn` Set.singleton (TxOutputRef (transactionId initialBlock (head $ Set.toList $ blockTransactions initialBlock)) 0)
+           it "empty database have no transactions to mine" $ \db -> do
+                   Db.getTransactions db `shouldReturn` Set.empty
            it "getBlocksFrom unknown block id " $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
                    Db.getBlocksFrom db (hash initialBlock) `shouldReturn` Nothing
@@ -66,4 +67,14 @@ spec = do
                    fst <$> (Db.getLongestHead db)  `shouldReturn` (1 + dbFillerNumBlocks filler)
            it "database get unknown block" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
-                   Db.getBlock db unexistingBlockId `shouldReturn` Nothing                     
+                   Db.getBlock db unexistingBlockId `shouldReturn` Nothing
+           it "unknown block does not exists" $ \db -> property $ \filler -> do
+                   (dbFillerRun filler) db
+                   Db.isBlockExists db unexistingBlockId `shouldReturn` False
+           it "initial block does exists" $ \db -> property $ \filler -> do
+                   (dbFillerRun filler) db
+                   Db.isBlockExists db (blockId initialBlock) `shouldReturn` True
+           it "head block does exists" $ \db -> property $ \filler -> do
+                   (dbFillerRun filler) db
+                   (_, block) <- Db.getLongestHead db
+                   Db.isBlockExists db (blockId block) `shouldReturn` True
