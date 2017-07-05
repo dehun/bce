@@ -39,3 +39,7 @@ spec = do
            it "empty database have only one unspent" $ \db -> do
                    Db.unspentAt db (blockId initialBlock)
                          `shouldReturn` Set.singleton (TxOutputRef (transactionId initialBlock (head $ Set.toList $ blockTransactions initialBlock)) 0)
+           it "empty database get initial block" $ \db -> do
+                   Db.getBlock db (blockId initialBlock) `shouldReturn` Just initialBlock
+           it "empty database get unknown block" $ \db -> do
+                   Db.getBlock db (hash "what") `shouldReturn` Nothing                     
