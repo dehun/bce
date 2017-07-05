@@ -19,7 +19,6 @@ import Data.Maybe
 import qualified Data.Set as Set
 import qualified Data.ByteString as BS
 import Data.ByteString.Arbitrary
-import Debug.Trace    
     
 
 data DbFiller = DbFiller { dbFillerRun :: Db.Db -> IO ()
@@ -63,7 +62,7 @@ spec = do
                    Db.getTransactions db `shouldReturn` Set.empty
            it "getBlocksFrom unknown block id " $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
-                   Db.getBlocksFrom db (hash initialBlock) `shouldReturn` Nothing
+                   Db.getBlocksFrom db (hash unexistingBlockId) `shouldReturn` Nothing
            it "getBlocksTo unknonw block id " $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
                    Db.getBlocksTo db unexistingBlockId 1 `shouldReturn` []
@@ -95,5 +94,5 @@ spec = do
                    (_, topBlock) <- Db.getLongestHead db
                    unspent <- Set.toList <$> Db.unspentAt db (blockId topBlock)
                    mapM_ (\u -> do
-                           r <- Db.resolveInputOutput db (TxInput (traceShowId u))
-                           traceShowId r `shouldSatisfy` isJust) unspent
+                           r <- Db.resolveInputOutput db (TxInput u)
+                           r `shouldSatisfy` isJust) unspent
