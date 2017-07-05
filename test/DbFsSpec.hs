@@ -18,7 +18,8 @@ import Control.Exception
 import Data.Maybe    
 import qualified Data.Set as Set
 import qualified Data.ByteString as BS
-import Data.ByteString.Arbitrary    
+import Data.ByteString.Arbitrary
+import Debug.Trace    
     
 
 data DbFiller = DbFiller { dbFillerRun :: Db.Db -> IO ()
@@ -85,9 +86,14 @@ spec = do
                    (dbFillerRun filler) db
                    (_, block) <- Db.getLongestHead db
                    Db.isBlockExists db (blockId block) `shouldReturn` True
+           it "resolveInputOutput on empty db" $ \db -> do
+                   let initTx = head $ Set.toList $ blockTransactions $ initialBlock
+                   o <- Db.resolveInputOutput db (TxInput (TxOutputRef (transactionId initialBlock initTx) 0))
+                   o `shouldSatisfy` isJust
            it "all unspents are there" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
                    (_, topBlock) <- Db.getLongestHead db
                    unspent <- Set.toList <$> Db.unspentAt db (blockId topBlock)
-                   resolves <- mapM (\u -> Db.resolveInputOutput db (TxInput u)) unspent
-                   sequence resolves `shouldSatisfy` isJust
+                   mapM_ (\u -> do
+                           r <- Db.resolveInputOutput db (TxInput (traceShowId u))
+                           traceShowId r `shouldSatisfy` isJust) unspent

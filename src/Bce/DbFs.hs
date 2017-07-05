@@ -102,12 +102,16 @@ initDb dataDir =  do
              (LevelDb.defaultOptions { LevelDb.createIfMissing = True })
   blocksIndexDb <- LevelDb.open (dataDir ++ "/blocks.db")
                   (LevelDb.defaultOptions { LevelDb.createIfMissing = True })
+  -- initial block hack
   withBinaryFile (blockPath dataDir $ hash initialBlock) WriteMode
                    $ (\h -> BSL.hPut h (BinPut.runPut $ Bin.put initialBlock))
+  -- 
   startHead <- ChainHead (blockHeader initialBlock) 1 (hash initialBlock) <$> now
-  Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
-         <*> pure blocksIndexDb <*> newIORef (Set.singleton startHead) <*> newIORef Set.empty
-         <*> createCache maxCachedUnspent
+  db <- Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
+           <*> pure blocksIndexDb <*> newIORef (Set.singleton startHead) <*> newIORef Set.empty
+           <*> createCache maxCachedUnspent
+  pushDbTransaction db (head $ Set.toList $ blockTransactions initialBlock) initialBlock
+  return db
 
 unsafeCloseDb :: Db -> IO ()
 unsafeCloseDb db = do
@@ -321,7 +325,6 @@ getDbTransaction :: Db -> TransactionId -> IO (Maybe Transaction)
 getDbTransaction db txId = Lock.with (dbLock db) $ runMaybeT $ do
     txBin <- MaybeT $ liftIO $ LevelDb.get (dbTxIndex db) def (hashBs txId)
     let txref = BinGet.runGet Bin.get (BSL.fromStrict txBin) :: TransactionRef
-    liftIO $ logInfo $ "got txRef" ++ show txref
     block <- MaybeT $  loadBlockFromDisk db (txrefBlock txref)
     liftMaybe $ (Set.toList $ blockTransactions block) `at` (fromIntegral $ txrefIdx txref)
 
