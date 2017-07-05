@@ -7,26 +7,32 @@ import Bce.Hash
 import Bce.Crypto    
 import Bce.BlockChain
 import Bce.BlockChainHash
-import Bce.TimeStamp    
+import Bce.TimeStamp
+import Bce.Util    
 
 import Test.Hspec
 import Test.QuickCheck    
 import Test.QuickCheck.Arbitrary    
 import System.Directory
-import Control.Exception    
+import Control.Exception
+import Data.Maybe    
 import qualified Data.Set as Set
-import qualified Data.ByteString as BS        
+import qualified Data.ByteString as BS
+import Data.ByteString.Arbitrary    
     
 
 data DbFiller = DbFiller { dbFillerRun :: Db.Db -> IO ()
                          , dbFillerNumBlocks :: Int}
 instance Show DbFiller where
     show f = "DbFiller with N=" ++ show (dbFillerNumBlocks f)
+
+instance Arbitrary PubKey where
+    arbitrary = PubKey <$> fastRandBs 16
     
 instance Arbitrary DbFiller where
     arbitrary = do
-      blocksNum <- choose (0, 64) :: Gen Int
-      let ownerKey = PubKey $ BS.pack [0xde, 0xad]
+      blocksNum <- choose (0, 32) :: Gen Int
+      ownerKey <- arbitrary
       return $ DbFiller (\db -> mapM_ (\_ -> Miner.growOneBlock db ownerKey now)  [1..blocksNum]) blocksNum
 
 testDbPath = "./tmpdb"
@@ -39,6 +45,7 @@ withDb :: String -> (Db.Db -> IO()) -> IO ()
 withDb path = bracket (Db.initDb path) flushDb
 
 unexistingBlockId = hash "does not exist"
+
 
 spec :: Spec
 spec = do
@@ -78,3 +85,9 @@ spec = do
                    (dbFillerRun filler) db
                    (_, block) <- Db.getLongestHead db
                    Db.isBlockExists db (blockId block) `shouldReturn` True
+           it "all unspents are there" $ \db -> property $ \filler -> do
+                   (dbFillerRun filler) db
+                   (_, topBlock) <- Db.getLongestHead db
+                   unspent <- Set.toList <$> Db.unspentAt db (blockId topBlock)
+                   resolves <- mapM (\u -> Db.resolveInputOutput db (TxInput u)) unspent
+                   sequence resolves `shouldSatisfy` isJust

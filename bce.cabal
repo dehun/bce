@@ -22,6 +22,7 @@ library
                  , base16-bytestring
                  , binary
                  , bytestring
+                 , bytestring-arbitrary >= 0.1.1
                  , concurrent-extra
                  , containers
                  , cryptohash-sha256
@@ -76,6 +77,8 @@ executable bcedaemon
                          bce,
                          binary,
                          bytestring,
+                         bytestring-arbitrary,
+                         bytestring-arbitrary >= 0.1.1,
                          concurrent-extra,
                          containers,
                          data-default,
@@ -106,6 +109,9 @@ Test-Suite test-hunit-example
                   , base
                   , bce
                   , binary
+                  , bytestring
+                  , bytestring-arbitrary
+                  , bytestring-arbitrary >= 0.1.1
                   , concurrent-extra
                   , containers
                   , data-default
@@ -122,6 +128,5 @@ Test-Suite test-hunit-example
                   , time
                   , transformers
                   , word8
-                  , bytestring
     default-language:    Haskell2010                  
                          
