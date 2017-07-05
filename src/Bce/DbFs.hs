@@ -4,6 +4,7 @@ module Bce.DbFs
     ( Db
     , dbDataDir
     , initDb
+    , unsafeCloseDb
     , loadDb
     , pushBlock
     , getBlocksFrom
@@ -57,6 +58,7 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map        
 import qualified Control.Concurrent.RLock as Lock
 import qualified Database.LevelDB.Base as LevelDb
+import qualified Database.LevelDB.Internal as LevelDbInt
 import qualified Data.Binary as Bin
 import qualified Data.Binary.Get as BinGet
 import qualified Data.Binary.Put as BinPut
@@ -106,6 +108,12 @@ initDb dataDir =  do
   Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
          <*> pure blocksIndexDb <*> newIORef (Set.singleton startHead) <*> newIORef Set.empty
          <*> createCache maxCachedUnspent
+
+unsafeCloseDb :: Db -> IO ()
+unsafeCloseDb db = do
+    LevelDbInt.unsafeClose (dbBlocksIndex db)
+    LevelDbInt.unsafeClose (dbTxIndex db)              
+    
 
 nextBlocks :: Db -> Hash -> IO (Set.Set Hash)
 nextBlocks db prevBlockHash = do
@@ -355,7 +363,9 @@ unspentAt :: Db -> Hash -> IO (Set.Set TxOutputRef)
 unspentAt db uptoBlock =
     continue uptoBlock Set.empty Set.empty
     where continue h unspent spent
-              | h == hash initialBlock = return (Set.difference unspent spent)
+              | h == hash initialBlock = let (income, spendings) = singleBlockUnspent initialBlock
+                                         in return (Set.difference (Set.union income unspent)
+                                                                   (Set.union spent spendings))
               | otherwise = do
             cached <- queryCache h (dbUnspentCache db)
             case cached of
