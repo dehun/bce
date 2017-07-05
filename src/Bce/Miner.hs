@@ -11,6 +11,7 @@ import Bce.Logger
 import qualified Bce.DbFs as Db
 import qualified Bce.VerifiedDb as VerifiedDb    
 
+import Control.Monad    
 import Data.Either    
 import Debug.Trace
 import GHC.Int (Int64)
@@ -43,7 +44,7 @@ coinbaseTransaction db ownerKey txs = do
     return $ CoinbaseTransaction $ Set.fromList [TxOutput maxReward ownerKey]
 
 -- TODO: split mining into finding block and pushing it to db
-growChain :: Db.Db -> PubKey -> Timer -> IO ()
+growChain :: Db.Db -> PubKey -> Timer -> IO Bool
 growChain db ownerKey timer = do
     time <- timer
     rnd <- randomIO :: IO Int64
@@ -64,8 +65,15 @@ growChain db ownerKey timer = do
                   ++ "; block difficulity is " ++ (show $ blockDifficulity topBlock)
                   ++ "; next difficulity is " ++ (show nextDiff)
                   ++ "; blockhash is " ++ (show $ hash topBlock)
-      return ()
-    else return ()
+      return True
+    else return False
+
+growOneBlock :: Db.Db -> PubKey -> Timer -> IO ()
+growOneBlock db ownerKey timer = do
+     r <- growChain db ownerKey timer
+     if r then return ()
+     else growOneBlock db ownerKey timer
+
 
 mineForever :: Db.Db -> PubKey -> Timer -> IO ()
 mineForever db pubkey timer = forever $ growChain db pubkey timer
