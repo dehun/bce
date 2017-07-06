@@ -15,10 +15,13 @@ import Test.QuickCheck
 import Test.QuickCheck.Arbitrary    
 import System.Directory
 import Control.Exception
-import Data.Maybe    
+import Data.Maybe
+import Data.List    
 import qualified Data.Set as Set
 import qualified Data.ByteString as BS
 import Data.ByteString.Arbitrary
+import Control.Monad
+import System.Random    
     
 
 data DbFiller = DbFiller { dbFillerRun :: Db.Db -> IO ()
@@ -28,12 +31,50 @@ instance Show DbFiller where
 
 instance Arbitrary PubKey where
     arbitrary = PubKey <$> fastRandBs 16
+instance Arbitrary PrivKey where
+    arbitrary = PrivKey <$> fastRandBs 16
+
+instance Arbitrary KeyPair where
+    arbitrary = KeyPair <$> arbitrary <*> arbitrary
+
+generateArbitraryTx :: Db.Db -> Set.Set TxOutputRef -> [KeyPair] -> IO (Maybe (Transaction, Set.Set TxOutputRef))
+generateArbitraryTx db unspent keys
+    | or [unspent == Set.empty, length keys == 0] = return Nothing
+    | otherwise = do
+  outputIdx <- mod <$> randomIO <*> pure (Set.size unspent)
+  let outputRef = (Set.toList unspent) !! outputIdx
+  Just output <- Db.resolveInputOutput db (TxInput outputRef)
+  toArbIdx <- mod <$> randomIO <*> pure (length keys)
+  let toArbKey = keys !! toArbIdx
+  let newTxInputs = Set.singleton $ TxInput outputRef
+  let newTxOutputs = Set.singleton $ TxOutput (outputAmount output) (keyPairPub toArbKey)
+  let Just outputKeyPair = find (\ks -> keyPairPub ks == outputPubKey output) keys
+  let newTxSign = sign (hash (newTxInputs, newTxOutputs)) (keyPairPriv outputKeyPair)
+  let newTx = Transaction newTxInputs newTxOutputs newTxSign
+  return $ Just (newTx, Set.singleton outputRef)
+
+                
+generateArbitraryTxs :: Db.Db -> Set.Set TxOutputRef -> [KeyPair] -> IO [Transaction]
+generateArbitraryTxs db unspent' keys = do
+  numArbTxs <- mod <$> randomIO <*> pure (Set.size unspent')
+  (_, txs) <- foldM (\(unspent, txs) _ -> do
+                       r <- generateArbitraryTx db unspent keys
+                       case r of
+                         Just (tx, spent) -> return (Set.difference unspent spent, tx:txs)
+                         Nothing -> return (unspent, txs)) (unspent', []) [1..numArbTxs]
+  return txs
     
 instance Arbitrary DbFiller where
     arbitrary = do
       blocksNum <- choose (0, 32) :: Gen Int
-      ownerKey <- arbitrary
-      return $ DbFiller (\db -> mapM_ (\_ -> Miner.growOneBlock db ownerKey now)  [1..blocksNum]) blocksNum
+      keys <- mapM (\_ -> arbitrary) [1..blocksNum]
+      return $ DbFiller (\db -> mapM_ (\k -> do
+                                         (_, topBlock) <- Db.getLongestHead db
+                                         unspent <- Db.unspentAt db (blockId topBlock)
+                                         txs <- generateArbitraryTxs db unspent keys
+                                         Db.pushTransactions db (Set.fromList txs)
+                                         Miner.growOneBlock db (keyPairPub k) now
+                                      )  keys) blocksNum
 
 testDbPath = "./tmpdb"
 
@@ -96,3 +137,13 @@ spec = do
                    mapM_ (\u -> do
                            r <- Db.resolveInputOutput db (TxInput u)
                            r `shouldSatisfy` isJust) unspent
+           it "does not loose money" $ \db -> property $ \filler -> do
+                   (dbFillerRun filler) db
+                   (_, topBlock) <- Db.getLongestHead db
+                   unspent <- Set.toList <$> Db.unspentAt db (blockId topBlock)
+                   resolvesOpts <- mapM (\u -> Db.resolveInputOutput db (TxInput u)) unspent
+                   let Just resolves = sequence resolvesOpts
+                   let totalCoins = sum (map outputAmount resolves)
+                   totalCoins `shouldBe`
+                              fromIntegral (Db.baseCoinbaseReward * (fromIntegral $ 1 + dbFillerNumBlocks filler))
+                   

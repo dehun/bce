@@ -22,6 +22,7 @@ module Bce.DbFs
     , resolveInputOutput
     , isBlockExists
     , transactionally
+    , baseCoinbaseReward
     )
         where
 
@@ -202,12 +203,13 @@ transactionFee db (Transaction inputs outputs _) = runMaybeT $ do
     totalInput <- liftMaybe $ sum <$> map outputAmount <$> (sequence inputOutputs)
     return $ totalInput - totalOutput
 
+baseCoinbaseReward = 50           
+
 maxCoinbaseReward :: Db -> [Transaction] -> IO (Maybe Int64)
 maxCoinbaseReward db txs = Lock.with (dbLock db) $ runMaybeT $ do
   feesOpt <- liftIO $ mapM (transactionFee db) txs
   fees <- liftMaybe $ sequence feesOpt 
-  let baseReward = 50
-  return $ baseReward + sum fees
+  return $ baseCoinbaseReward + sum fees
 
 
 

@@ -13,6 +13,9 @@ import qualified Data.ByteString.Base16 as B16
 data PubKey = PubKey BS.ByteString deriving (Eq, Ord, Generic)
 data PrivKey = PrivKey BS.ByteString deriving (Eq, Ord, Generic)
 
+data KeyPair = KeyPair { keyPairPub :: PubKey
+                       , keyPairPriv :: PrivKey } deriving (Ord, Eq, Generic, Show)
+
 instance Show PubKey
     where show (PubKey x) = BS.unpack $ B16.encode x
 
