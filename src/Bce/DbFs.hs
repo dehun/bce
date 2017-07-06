@@ -110,7 +110,7 @@ initDb dataDir =  do
   startHead <- ChainHead (blockHeader initialBlock) 1 (hash initialBlock) <$> now
   db <- Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
            <*> pure blocksIndexDb <*> newIORef (Set.singleton startHead) <*> newIORef Set.empty
-           <*> createCache maxCachedUnspent
+           <*> createCache maxCachedUnspent now
   pushDbTransaction db (head $ Set.toList $ blockTransactions initialBlock) initialBlock
   return db
 

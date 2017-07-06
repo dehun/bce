@@ -13,15 +13,16 @@ data CacheEntry v = CacheEntry { cacheEntryValue :: v
                                , cacheEntryAccessedAt :: TimeStamp}
     
 data Cache k v = Cache { cacheState :: IORef (Map.Map k (CacheEntry v))
-                       , cacheLimit :: Int}
+                       , cacheLimit :: Int
+                       , cacheTimer :: Timer}
 
-createCache :: (Ord k) => Int -> IO (Cache k v)
-createCache limit = Cache <$> newIORef Map.empty <*> pure limit
+createCache :: (Ord k) => Int -> Timer-> IO (Cache k v)
+createCache limit timer = Cache <$> newIORef Map.empty <*> pure limit <*> pure timer
 
 cacheValue :: (Ord k) => k -> v -> Cache k v -> IO (Cache k v)
 cacheValue k v cache = do
     oldState <- readIORef $ cacheState cache
-    t <- now
+    t <- (cacheTimer cache)
     let newState = Map.insert k (CacheEntry v t) oldState
     writeIORef  (cacheState cache) newState
     when (Map.size newState > cacheLimit cache) (pruneCache cache)
