@@ -6,7 +6,7 @@ import Bce.BlockChainHash
 import Bce.Difficulity
 
 import GHC.Int (Int64)
-import GHC.IO.Unsafe
+import System.IO.Unsafe
 import Data.IORef    
 import Data.List
 import qualified Data.Set as Set    

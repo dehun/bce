@@ -36,6 +36,7 @@ library
                  , time
                  , transformers
                  , word8
+                 , ed25519-donna
                  
     exposed-modules: Bce.BlockChain
                    , Bce.Hash

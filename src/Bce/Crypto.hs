@@ -10,6 +10,8 @@ import GHC.Generics
 import qualified Data.ByteString.Char8 as BS    
 import qualified Data.ByteString.Base16 as B16
 
+import qualified Crypto.Ed25519.Pure as Ec
+
 data PubKey = PubKey BS.ByteString deriving (Eq, Ord, Generic)
 data PrivKey = PrivKey BS.ByteString deriving (Eq, Ord, Generic)
 
@@ -34,9 +36,14 @@ instance Read PrivKey where
                                
 type Signature = BS.ByteString    
 
--- TODO: implement me
 sign :: Hash -> PrivKey -> Signature
-sign h k = hashBs h
+sign (Hash h) (PrivKey k) =
+    let Just privKey = Ec.importPrivate k
+        pubKey = Ec.generatePublic privKey
+        Ec.Sig sig = Ec.sign h privKey pubKey
+    in sig
 
 verifySignature :: Signature -> PubKey -> Hash -> Bool
-verifySignature s p h = s == hashBs h
+verifySignature s (PubKey p) (Hash h) =
+    let Just pubKey = Ec.importPublic p
+    in Ec.valid h pubKey (Ec.Sig s)
