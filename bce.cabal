@@ -14,7 +14,7 @@ cabal-version:       >=1.10
 
 library
     hs-source-dirs: src
-    ghc-options: -g2 
+    ghc-options: -g
     build-depends: QuickCheck >= 2.8.2
                  , Spock >= 0.12.0.0
                  , aeson >= 0.11.2.1
@@ -65,7 +65,7 @@ library
                                          
 
 executable bcedaemon
-    ghc-options: -g2
+    ghc-options: -g
     main-is:             Main.hs
   -- other-modules:       
   -- other-extensions:    
