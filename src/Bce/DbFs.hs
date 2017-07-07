@@ -2,11 +2,13 @@
 {-# LANGUAGE DeriveGeneric #-}
 module Bce.DbFs
     ( Db
+    , dbDataDir
     , initDb
+    , unsafeCloseDb
     , loadDb
     , pushBlock
-    , getBlocksFromHash
-    , getBlocksToHash
+    , getBlocksFrom
+    , getBlocksTo
     , getLongestHead
     , getBlock
     , getTransactions
@@ -19,6 +21,8 @@ module Bce.DbFs
     , transactionFee
     , resolveInputOutput
     , isBlockExists
+    , transactionally
+    , baseCoinbaseReward
     )
         where
 
@@ -32,6 +36,7 @@ import Bce.Difficulity
 import Bce.Util
 import Bce.Logger
 import Bce.Crypto
+import Bce.Cache    
 
 import GHC.Generics (Generic)
 import GHC.Int(Int64, Int32)
@@ -54,6 +59,7 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map        
 import qualified Control.Concurrent.RLock as Lock
 import qualified Database.LevelDB.Base as LevelDb
+import qualified Database.LevelDB.Internal as LevelDbInt
 import qualified Data.Binary as Bin
 import qualified Data.Binary.Get as BinGet
 import qualified Data.Binary.Put as BinPut
@@ -81,9 +87,14 @@ data Db = Db {
     , dbBlocksIndex :: LevelDb.DB
     , dbHeads :: IORef (Set.Set ChainHead)
     , dbTransactions :: IORef (Set.Set Transaction)
-    , dbUnspentCache :: IORef (Map.Map Hash (Set.Set TxOutputRef))
+    , dbUnspentCache :: Cache BlockId (Set.Set TxOutputRef)
       }
 
+
+transactionally :: Db -> IO b -> IO b
+transactionally db fx = Lock.with (dbLock db) fx
+
+maxCachedUnspent = 100                        
 
 initDb :: Path -> IO Db
 initDb dataDir =  do
@@ -92,13 +103,22 @@ initDb dataDir =  do
              (LevelDb.defaultOptions { LevelDb.createIfMissing = True })
   blocksIndexDb <- LevelDb.open (dataDir ++ "/blocks.db")
                   (LevelDb.defaultOptions { LevelDb.createIfMissing = True })
+  -- initial block hack
   withBinaryFile (blockPath dataDir $ hash initialBlock) WriteMode
                    $ (\h -> BSL.hPut h (BinPut.runPut $ Bin.put initialBlock))
+  -- 
   startHead <- ChainHead (blockHeader initialBlock) 1 (hash initialBlock) <$> now
-  Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
-         <*> pure blocksIndexDb <*> newIORef (Set.singleton startHead) <*> newIORef Set.empty
-         <*> newIORef Map.empty
+  db <- Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
+           <*> pure blocksIndexDb <*> newIORef (Set.singleton startHead) <*> newIORef Set.empty
+           <*> createCache maxCachedUnspent now
+  pushDbTransaction db (head $ Set.toList $ blockTransactions initialBlock) initialBlock
+  return db
 
+unsafeCloseDb :: Db -> IO ()
+unsafeCloseDb db = do
+    LevelDbInt.unsafeClose (dbBlocksIndex db)
+    LevelDbInt.unsafeClose (dbTxIndex db)              
+    
 
 nextBlocks :: Db -> Hash -> IO (Set.Set Hash)
 nextBlocks db prevBlockHash = do
@@ -183,12 +203,13 @@ transactionFee db (Transaction inputs outputs _) = runMaybeT $ do
     totalInput <- liftMaybe $ sum <$> map outputAmount <$> (sequence inputOutputs)
     return $ totalInput - totalOutput
 
+baseCoinbaseReward = 50           
+
 maxCoinbaseReward :: Db -> [Transaction] -> IO (Maybe Int64)
 maxCoinbaseReward db txs = Lock.with (dbLock db) $ runMaybeT $ do
   feesOpt <- liftIO $ mapM (transactionFee db) txs
   fees <- liftMaybe $ sequence feesOpt 
-  let baseReward = 50
-  return $ baseReward + sum fees
+  return $ baseCoinbaseReward + sum fees
 
 
 
@@ -201,7 +222,7 @@ consumeTransactions db block = do
                        
 pushBlock :: Db -> Block -> IO Bool
 pushBlock db block = Lock.with (dbLock db) $ do
-      logInfo $ "pushing block" ++ show (hash block)
+      logDebug $ "pushing block" ++ show (hash block)
       pushBlockToDisk db block
       consumeTransactions db block
       pushBlockToRamState db block
@@ -213,9 +234,7 @@ updateUnspentCache db block = do
   prevUnspent <- unspentAt db (bhPrevBlockHeaderHash $ blockHeader block)
   let (income, spendings) = singleBlockUnspent block
   let blockUnspent = Set.difference (Set.union prevUnspent income) spendings
-  oldCache <- readIORef (dbUnspentCache db)
-  let newCache = Map.insert (hash block) blockUnspent oldCache
-  writeIORef (dbUnspentCache db) newCache
+  const () <$> cacheValue (hash block) blockUnspent (dbUnspentCache db)
   
                        
 pushBlockToRamState :: Db -> Block -> IO ()
@@ -257,10 +276,10 @@ getLongestHead db = Lock.with (dbLock db) $ do
          
         
 -- TODO: use next blocks and longest head (we have branches)
-getBlocksFromHash :: Db -> Hash -> IO (Maybe [Block])
-getBlocksFromHash db fromHash =
+getBlocksFrom :: Db -> BlockId -> IO (Maybe [Block])
+getBlocksFrom db fromBlockId =
     let continue bh acc
-            | bh == fromHash = return $ Just $ reverse acc
+            | bh == fromBlockId = return $ Just $ reverse acc
             | otherwise = do
                  b <- loadBlockFromDisk db bh
                  case b of
@@ -273,18 +292,17 @@ getBlocksFromHash db fromHash =
       continue s []
 
 
--- TODO: fixme - returns in incorrect order?
-getBlocksToHash :: Db -> Hash -> Int -> IO [Block]               
-getBlocksToHash db toHash amount
+getBlocksTo :: Db -> BlockId -> Int -> IO [Block]               
+getBlocksTo db toBlockId amount
     | amount == 0 = return []
-    | toHash == hash initialBlock = return []
+    | toBlockId == hash initialBlock = return []
     | otherwise = do
-  blockOpt <- loadBlockFromDisk db toHash :: IO (Maybe Block)
+  blockOpt <- loadBlockFromDisk db toBlockId :: IO (Maybe Block)
   case blockOpt of
     Just block -> Lock.with (dbLock db) $ do
                   let prevHash = bhPrevBlockHeaderHash $ blockHeader block
-                  prevBlocks <- getBlocksToHash db prevHash (amount - 1)
-                  return (block : prevBlocks)
+                  prevBlocks <- getBlocksTo db prevHash $ amount - 1
+                  return $ block : prevBlocks
     Nothing -> return [] 
      
     
@@ -309,7 +327,6 @@ getDbTransaction :: Db -> TransactionId -> IO (Maybe Transaction)
 getDbTransaction db txId = Lock.with (dbLock db) $ runMaybeT $ do
     txBin <- MaybeT $ liftIO $ LevelDb.get (dbTxIndex db) def (hashBs txId)
     let txref = BinGet.runGet Bin.get (BSL.fromStrict txBin) :: TransactionRef
-    liftIO $ logInfo $ "got txRef" ++ show txref
     block <- MaybeT $  loadBlockFromDisk db (txrefBlock txref)
     liftMaybe $ (Set.toList $ blockTransactions block) `at` (fromIntegral $ txrefIdx txref)
 
@@ -324,19 +341,13 @@ pushDbTransaction db tx block =
 lastNBlocks :: Db -> Int -> IO [Block]
 lastNBlocks db n = do
     upto <- hash <$> chainHeadBlockHeader <$> longestHead db
-    getBlocksToHash db upto n
+    getBlocksTo db upto n
 
 
 getNextDifficulity :: Db -> IO Difficulity
 getNextDifficulity db = Lock.with (dbLock db) $ do
   blocks <- lastNBlocks db difficulityRecalculationBlocks
   return $ nextDifficulity blocks
-
-
-queryUnspentCache :: Db -> Hash -> IO (Maybe (Set.Set TxOutputRef))
-queryUnspentCache db blockHash = do
-  cache <- readIORef (dbUnspentCache db)
-  return $ Map.lookup blockHash cache
 
 
 singleBlockUnspent :: Block -> (Set.Set TxOutputRef, Set.Set TxOutputRef)
@@ -357,9 +368,11 @@ unspentAt :: Db -> Hash -> IO (Set.Set TxOutputRef)
 unspentAt db uptoBlock =
     continue uptoBlock Set.empty Set.empty
     where continue h unspent spent
-              | h == hash initialBlock = return (Set.difference unspent spent)
+              | h == hash initialBlock = let (income, spendings) = singleBlockUnspent initialBlock
+                                         in return (Set.difference (Set.union income unspent)
+                                                                   (Set.union spent spendings))
               | otherwise = do
-            cached <- queryUnspentCache db h
+            cached <- queryCache h (dbUnspentCache db)
             case cached of
               Just val -> return (Set.difference (Set.union unspent val) spent)
               Nothing -> do

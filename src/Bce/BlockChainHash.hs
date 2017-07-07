@@ -28,11 +28,15 @@ instance Hashable BlockHeader where
         hash (mconcat [hashBs txHash, hashBs prevBlockHash,
                        int64ToBs nonce, int64ToBs wallclock, int32ToBs difficulity])
 
+
+instance Hashable (Set.Set TxInput, Set.Set TxOutput) where
+    hash (inputs, outputs) = hash $ mconcat [ mconcat $ map (\i -> hashBs $ hash i) (Set.toList inputs)
+                                            , mconcat $ map (\o -> hashBs $ hash o) (Set.toList outputs) ]
+        
 instance Hashable Transaction where
     hash (CoinbaseTransaction outputs) = hash $ mconcat $ map (\o -> hashBs $ hash  o) (Set.toList outputs)
-    hash (Transaction inputs outputs sig) =
-        hash $ mconcat [ mconcat $ map (\i -> hashBs $ hash i) (Set.toList inputs)
-                       , mconcat $ map (\o -> hashBs $ hash o) (Set.toList outputs) ]
+    hash (Transaction inputs outputs sig) = hash (inputs, outputs)
+
                                               
 instance Hashable TxOutput where
     hash (TxOutput amount pubkey) = hash $ mconcat [hashBs $ hash amount, hashBs $ hash pubkey ] 
@@ -52,6 +56,9 @@ instance Hashable PrivKey where hash (PrivKey bs) = hash bs
 
 transactionId :: Block -> Transaction -> TransactionId
 transactionId block tx = hash $ mconcat $ map hashBs [hash block, hash tx]
+
+blockId :: Block -> BlockId
+blockId = hash 
 
 -- TODO: move this away!
 instance Ord Transaction where

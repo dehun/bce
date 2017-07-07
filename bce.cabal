@@ -15,18 +15,21 @@ cabal-version:       >=1.10
 library
     hs-source-dirs: src
     ghc-options: -g2 
-    build-depends: Spock >= 0.12.0.0
+    build-depends: QuickCheck >= 2.8.2
+                 , Spock >= 0.12.0.0
                  , aeson >= 0.11.2.1
                  , base
                  , base16-bytestring
                  , binary
                  , bytestring
+                 , bytestring-arbitrary >= 0.1.1
                  , concurrent-extra
                  , containers
                  , cryptohash-sha256
                  , data-default
                  , directory
                  , either
+                 , hspec >= 2.2.4
                  , leveldb-haskell
                  , mtl
                  , network
@@ -54,6 +57,7 @@ library
                    , Bce.VerifiedDb
                    , Bce.BlockChainVerification                   
                    , Bce.Logger
+                   , Bce.Cache
 
 
 
@@ -66,17 +70,22 @@ executable bcedaemon
   -- other-modules:       
   -- other-extensions:    
     build-depends:       Cabal,
+                         QuickCheck >= 2.8.2,
                          Spock >= 0.12.0.0,
                          aeson,
                          aeson >= 0.11.2.1,
                          base,
                          bce,
                          binary,
+                         bytestring,
+                         bytestring-arbitrary,
+                         bytestring-arbitrary >= 0.1.1,
                          concurrent-extra,
                          containers,
                          data-default,
                          directory,
                          either,
+                         hspec >= 2.2.4,
                          leveldb-haskell,
                          mtl,
                          network,
@@ -86,33 +95,36 @@ executable bcedaemon
                          text >= 1.2.2.1,
                          time,
                          transformers,
-                         word8,
-                         bytestring
+                         word8
     hs-source-dirs: src/BceDaemon
     default-language:    Haskell2010
 
 
 Test-Suite test-hunit-example
     type:             exitcode-stdio-1.0
-    hs-source-dirs:   tests
-    Main-is:          Tests.hs
-    Build-Depends:  Spock >= 0.12.0.0
+    hs-source-dirs:   test
+    Main-is:          Main.hs
+    Build-Depends:  QuickCheck >= 2.8.2
+                  , Spock >= 0.12.0.0
                   , aeson >= 0.11.2.1
                   , base
                   , bce
                   , binary
+                  , bytestring
+                  , bytestring-arbitrary
+                  , bytestring-arbitrary >= 0.1.1
                   , concurrent-extra
                   , containers
                   , data-default
                   , directory
                   , either
+                  , hspec
+                  , hspec >= 2.2.4
                   , leveldb-haskell
                   , mtl
                   , network
                   , random
                   , stm
-                  , tasty
-                  , tasty-hunit
                   , text >= 1.2.2.1
                   , time
                   , transformers

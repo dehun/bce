@@ -15,6 +15,9 @@ import qualified Crypto.Ed25519.Pure as Ec
 data PubKey = PubKey BS.ByteString deriving (Eq, Ord, Generic)
 data PrivKey = PrivKey BS.ByteString deriving (Eq, Ord, Generic)
 
+data KeyPair = KeyPair { keyPairPub :: PubKey
+                       , keyPairPriv :: PrivKey } deriving (Ord, Eq, Generic, Show)
+
 instance Show PubKey
     where show (PubKey x) = BS.unpack $ B16.encode x
 
@@ -34,7 +37,7 @@ instance Read PrivKey where
                           then []
                           else [(PrivKey d, BS.unpack r)]                            
                                
-type Signature = BS.ByteString    
+type Signature = BS.ByteString
 
 sign :: Hash -> PrivKey -> Signature
 sign (Hash h) (PrivKey k) =
