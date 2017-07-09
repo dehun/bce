@@ -44,6 +44,10 @@ spec = do
            it "getBlocksFrom unknown block id " $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
                    Db.getBlocksFrom db (hash unexistingBlockId) `shouldReturn` Nothing
+           it "getBlocksFrom initial block id " $ \db -> property $ \filler -> do
+                   (dbFillerRun filler) db
+                   Just blks <- Db.getBlocksFrom db (blockId initialBlock)
+                   blks `shouldSatisfy` (\bs -> length bs == dbFillerNumBlocks filler)
            it "getBlocksTo unknonw block id " $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
                    Db.getBlocksTo db unexistingBlockId 1 `shouldReturn` []

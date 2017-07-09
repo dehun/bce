@@ -10,6 +10,7 @@ import Bce.BlockChainHash
 import Bce.TimeStamp
 import Bce.Util    
 
+import GHC.Int(Int64, Int32)        
 import Test.Hspec
 import Test.QuickCheck    
 import Test.QuickCheck.Arbitrary    
@@ -30,6 +31,7 @@ instance Show DbFiller where
 
 instance Arbitrary PubKey where
     arbitrary = PubKey <$> fastRandBs 16
+                
 instance Arbitrary PrivKey where
     arbitrary = PrivKey <$> fastRandBs 16
 
@@ -83,3 +85,8 @@ flushDb db = do
 
 withDb :: String -> (Db.Db -> IO()) -> IO ()
 withDb path = bracket (Db.initDb path) flushDb
+
+withArbitraryDb :: (Db.Db -> IO()) -> IO ()
+withArbitraryDb fx = do
+  arbPath <- show <$> hash <$> (randomIO :: IO Int64)
+  withDb arbPath fx

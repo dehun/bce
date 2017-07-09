@@ -15,6 +15,7 @@ module Bce.DbFs
     , getDbTransaction
     , pushTransactions
     , getNextDifficulity
+    , getNextDifficulityTo
     , maxCoinbaseReward
     , getPubKeyBalance
     , unspentAt
@@ -38,6 +39,7 @@ import Bce.Logger
 import Bce.Crypto
 import Bce.Cache    
 
+import Debug.Trace    
 import GHC.Generics (Generic)
 import GHC.Int(Int64, Int32)
 import Data.IORef
@@ -158,26 +160,26 @@ isBlockExists db blockId = isJust <$> loadBlockFromDisk db blockId
 loadBlockFromDisk :: Db -> Hash -> IO (Maybe Block)
 loadBlockFromDisk db blockHash = Lock.with (dbLock db) $ 
     Exception.catch (do
-                      withBinaryFile (dbBlockPath db blockHash) ReadMode
-                                         $ (\h -> do
-                                              content <- BSL.fromStrict <$> BS.hGetContents h
-                                              return $ Just $ BinGet.runGet Bin.get content)
+                      content <- BS.readFile (dbBlockPath db blockHash)
+                      return $ Just $ (BinGet.runGet Bin.get (BSL.fromStrict content))
                     ) (\e -> do
                          let err = show (e :: Exception.SomeException)
-                         logTrace $ "error occured on block loading " ++ err
+                         logDebug $ "error occured on block loading " ++ err
                          return Nothing
                       )
 
 
 pushBlockToDisk :: Db -> Block -> IO ()
 pushBlockToDisk db block = do
-    withBinaryFile (dbBlockPath db $ hash block) WriteMode
-                   $ (\h -> BSL.hPut h (BinPut.runPut $ Bin.put block))
+    logInfo $  "pushing block to disk, blockid=" ++ show (blockId block)
+    let content = BSL.toStrict $ BinPut.runPut $ Bin.put block            
+    BS.writeFile (dbBlockPath db $ blockId block) content
     let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader $ block
     newNextBlocks <- Set.insert (hash block) <$> nextBlocks db prevBlockHash
     LevelDb.put (dbBlocksIndex db) def (hashBs prevBlockHash)
                (BSL.toStrict $ BinPut.runPut $ Bin.put newNextBlocks)
     mapM_ (\tx -> pushDbTransaction db tx block) $ blockTransactions block
+    logInfo $  "pushed block to disk, blockid=" ++ show (blockId block)                            
 
 
 chainLength :: Db -> Hash -> IO Int
@@ -222,7 +224,7 @@ consumeTransactions db block = do
                        
 pushBlock :: Db -> Block -> IO Bool
 pushBlock db block = Lock.with (dbLock db) $ do
-      logDebug $ "pushing block" ++ show (hash block)
+      logInfo $ "pushing block" ++ show (hash block)
       pushBlockToDisk db block
       consumeTransactions db block
       pushBlockToRamState db block
@@ -271,7 +273,8 @@ longestHead db = maximumBy (comparing chainHeadLength) <$> readIORef (dbHeads db
 getLongestHead :: Db -> IO (Int, Block)
 getLongestHead db = Lock.with (dbLock db) $ do
   head <- longestHead db
-  Just blk <- loadBlockFromDisk db $ hash $ chainHeadBlockHeader head
+  let headId = hash $ chainHeadBlockHeader head
+  Just blk <- loadBlockFromDisk db $ headId
   return (chainHeadLength head, blk)
          
         
@@ -292,7 +295,7 @@ getBlocksFrom db fromBlockId =
       continue s []
 
 
-getBlocksTo :: Db -> BlockId -> Int -> IO [Block]               
+getBlocksTo :: Db -> BlockId -> Int -> IO [Block]
 getBlocksTo db toBlockId amount
     | amount == 0 = return []
     | toBlockId == hash initialBlock = return []
@@ -303,7 +306,7 @@ getBlocksTo db toBlockId amount
                   let prevHash = bhPrevBlockHeaderHash $ blockHeader block
                   prevBlocks <- getBlocksTo db prevHash $ amount - 1
                   return $ block : prevBlocks
-    Nothing -> return [] 
+    Nothing -> return []
      
     
 -- txs!
@@ -348,6 +351,12 @@ getNextDifficulity :: Db -> IO Difficulity
 getNextDifficulity db = Lock.with (dbLock db) $ do
   blocks <- lastNBlocks db difficulityRecalculationBlocks
   return $ nextDifficulity blocks
+
+getNextDifficulityTo :: Db -> BlockId -> IO Difficulity
+getNextDifficulityTo db toBlockId = Lock.with (dbLock db) $ do
+   blocks <- getBlocksTo db toBlockId difficulityRecalculationBlocks
+   Just blk <- getBlock db toBlockId 
+   return $ nextDifficulity (blk:blocks)
 
 
 singleBlockUnspent :: Block -> (Set.Set TxOutputRef, Set.Set TxOutputRef)
