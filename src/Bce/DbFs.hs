@@ -171,7 +171,7 @@ loadBlockFromDisk db blockHash = Lock.with (dbLock db) $
 
 pushBlockToDisk :: Db -> Block -> IO ()
 pushBlockToDisk db block = do
-    logInfo $  "pushing block to disk, blockid=" ++ show (blockId block)
+    logDebug $  "pushing block to disk, blockid=" ++ show (blockId block)
     let content = BSL.toStrict $ BinPut.runPut $ Bin.put block            
     BS.writeFile (dbBlockPath db $ blockId block) content
     let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader $ block
@@ -179,7 +179,7 @@ pushBlockToDisk db block = do
     LevelDb.put (dbBlocksIndex db) def (hashBs prevBlockHash)
                (BSL.toStrict $ BinPut.runPut $ Bin.put newNextBlocks)
     mapM_ (\tx -> pushDbTransaction db tx block) $ blockTransactions block
-    logInfo $  "pushed block to disk, blockid=" ++ show (blockId block)                            
+    logDebug $  "pushed block to disk, blockid=" ++ show (blockId block)                            
 
 
 chainLength :: Db -> Hash -> IO Int
@@ -224,7 +224,7 @@ consumeTransactions db block = do
                        
 pushBlock :: Db -> Block -> IO Bool
 pushBlock db block = Lock.with (dbLock db) $ do
-      logInfo $ "pushing block" ++ show (hash block)
+      logDebug $ "pushing block" ++ show (hash block)
       pushBlockToDisk db block
       consumeTransactions db block
       pushBlockToRamState db block
