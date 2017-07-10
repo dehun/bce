@@ -224,7 +224,7 @@ consumeTransactions db block = do
                        
 pushBlock :: Db -> Block -> IO Bool
 pushBlock db block = Lock.with (dbLock db) $ do
-      logDebug $ "pushing block" ++ show (hash block)
+      logInfo $ "pushing block" ++ show (hash block)
       pushBlockToDisk db block
       consumeTransactions db block
       pushBlockToRamState db block
