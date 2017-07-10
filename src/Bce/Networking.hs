@@ -96,10 +96,10 @@ handlePeerMessage net peer msg = do
                  Just oldSyncState -> do
                      let askSkipInterval = 2 ^ (networkBlocksSyncAccelerationKoef oldSyncState)
                      let oldFromHash = networkBlockSyncLastAsk oldSyncState
-                     oldBlocks <- liftIO $ Db.getBlocksTo db oldFromHash askSkipInterval
-                     let newFromHash = case oldBlocks of
-                                        [] -> traceShowId $ hash initialBlock
-                                        _ -> hash $ last oldBlocks
+                     oldBlocksOpt <- liftIO $ Db.getBlocksTo db oldFromHash askSkipInterval
+                     let newFromHash = case oldBlocksOpt of
+                                         Nothing -> blockId initialBlock
+                                         Just oldBlocks -> hash $ last oldBlocks
                      let newSyncState = oldSyncState{ networkBlocksSyncAccelerationKoef =
                                                          1 + networkBlocksSyncAccelerationKoef oldSyncState
                                                     , networkBlockSyncLastAsk = newFromHash }

@@ -173,6 +173,7 @@ clientRecvLoop sock addr p2p =
           forM_ msgs (\m -> handlePeerMessage sock p2p m)
           clientRecvLoop sock addr p2p
       else do
+        liftIO $ logWarning $ "recv loop error"
         peer <- clientStatePeer <$> State.get
         case peer of
           Just peerAddress -> do
@@ -184,6 +185,7 @@ clientRecvLoop sock addr p2p =
 
 killPeer :: PeerAddress -> P2p -> IO Bool
 killPeer peer p2p = do
+    logWarning $ "killing peer" ++ show peer
     atomically $ do
       oldConnectedPeers <- readTVar $ p2pConnectedPeers p2p
       writeTVar (p2pConnectedPeers p2p) $ Set.delete peer oldConnectedPeers
@@ -198,20 +200,27 @@ killPeer peer p2p = do
 
 clientSendLoop :: Sock.Socket -> PeerAddress -> P2p -> IO ()
 clientSendLoop sock peerAddr p2p = do
-  Exception.catch
-               (do
-                   chan <- atomically $ dupTChan $ p2pSendChan p2p
-                   snd <- atomically $ readTChan chan
-                   let encodedMsg = encodeMsg $ sendMsg snd
-                   case sendDestination snd of
-                     Nothing -> SBS.send sock encodedMsg
-                     Just dst -> if dst == peerAddr
-                                 then SBS.send sock encodedMsg
-                                 else return 0
-                   clientSendLoop sock peerAddr p2p)
+  chan <- atomically $ dupTChan $ p2pSendChan p2p
+  let loop = do
+        snd <- atomically $ readTChan chan
+        let encodedMsg = encodeMsg $ sendMsg snd
+        case sendDestination snd of
+          Nothing -> do
+               logDebug $ "broadcast towards " ++ show peerAddr
+                           ++ " of size=" ++ show (BS.length encodedMsg)
+               SBS.send sock encodedMsg
+          Just dst -> if dst == peerAddr
+                      then do
+                        logDebug $ "sending towards " ++ show peerAddr
+                                    ++ " of size=" ++ show (BS.length encodedMsg)
+                        SBS.send sock encodedMsg
+                      else do
+                        logDebug $ "ignoring send towards " ++ show dst
+                        return 0
+  Exception.catch (forever loop)
                (\e -> do
                   Sock.close sock
-                  logInfo $ "killing peer connection at addr" ++ (show peerAddr)
+                  logDebug $ "killing peer connection at addr" ++ (show peerAddr)
                                ++ "catched" ++ show (e :: Exception.IOException)
                   killPeer peerAddr p2p
                   return ()
@@ -219,7 +228,7 @@ clientSendLoop sock peerAddr p2p = do
                     
 handlePeer :: Sock.Socket -> Sock.SockAddr -> P2p -> IO ()
 handlePeer sock addr p2p = do
-  logInfo $ "got peer from addr"  ++ show addr
+  logDebug $ "got peer from addr"  ++ show addr
   recvThread <- forkIO $ do
     State.evalStateT (clientRecvLoop sock addr p2p)
              (P2pClientState (BinGet.runGetIncremental msgDecoder) Nothing)
@@ -235,7 +244,7 @@ serverMainLoop sock p2p =
               handlePeer conn addr p2p
               return ()
       else do
-        logInfo "dropping the connection as we already at top of connecte peers"
+        logDebug "dropping the connection as we already at top of connecte peers"
         Sock.close conn
         return ()
 
@@ -281,7 +290,7 @@ reconnectPeer p2p peerAddress = do
                          do
                            Sock.connect sock $ peerAddressToSockAddr peerAddress
                            SBS.send sock $ encodeMsg $ P2pMessageHello $ p2pConfigBindAddress $ p2pConfig p2p
-                           logInfo $ "connected to " ++ show peerAddress
+                           logDebug $ "connected to " ++ show peerAddress
         case success of
           Right _ -> do
 
@@ -304,7 +313,7 @@ reconnectorLoop p2p = do
                         all <- readTVar $ p2pPeers p2p
                         connected <- readTVar $ p2pConnectedPeers p2p
                         if length connected < p2pConfigPeersConnectedLimit (p2pConfig p2p)
-                        then return $ (Set.\\) all connected
+                        then return $ (Set.delete (p2pConfigBindAddress $ p2pConfig p2p)$ (Set.\\) all connected)
                         else return Set.empty
     forM_ toConnect (\p -> forkIO $ reconnectPeer p2p p)
     reconnectorLoop p2p
@@ -339,8 +348,9 @@ broadcast p2p msg = do
     atomically $ writeTChan (p2pSendChan p2p) (PeerSend msg Nothing)
 
 send :: P2p -> PeerAddress -> P2pMessage -> IO ()
-send p2p peer msg =
-        atomically $ writeTChan (p2pSendChan p2p) (PeerSend msg $ Just peer)
+send p2p peer msg = do
+    logDebug $ "p2p queuing send towards peer="  ++ show peer
+    atomically $ writeTChan (p2pSendChan p2p) (PeerSend msg $ Just peer)
 
 broadcastPayload :: P2p -> BS.ByteString -> IO ()
 broadcastPayload p2p payload = broadcast p2p $ P2pMessagePayload payload

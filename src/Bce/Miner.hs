@@ -49,7 +49,7 @@ findBlock :: Db.Db -> PubKey -> Timer -> IO Block
 findBlock db ownerKey timer = do
     time <- timer
     rnd <- randomIO :: IO Int64
-    rtxs <- Db.getTransactions db              
+    rtxs <- Db.getTransactions db
     cbtx <- coinbaseTransaction db ownerKey rtxs
     txs <- Set.insert cbtx <$> Db.getTransactions db
     (_, topBlock) <- Db.getLongestHead db

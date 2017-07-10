@@ -41,6 +41,10 @@ spec = do
                          `shouldReturn` Set.singleton (TxOutputRef (transactionId initialBlock (head $ Set.toList $ blockTransactions initialBlock)) 0)
            it "empty database have no transactions to mine" $ \db -> do
                    Db.getTransactions db `shouldReturn` Set.empty
+           it "empty database getBlocksFrom unknown block id " $ \db -> do
+                   Db.getBlocksFrom db (hash unexistingBlockId) `shouldReturn` Nothing
+           it "empty database getBlocksTo initial block id " $ \db -> 
+                   Db.getBlocksTo db (blockId initialBlock) 1 `shouldReturn` Just [initialBlock]
            it "getBlocksFrom unknown block id " $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
                    Db.getBlocksFrom db (hash unexistingBlockId) `shouldReturn` Nothing
@@ -50,7 +54,26 @@ spec = do
                    blks `shouldSatisfy` (\bs -> length bs == dbFillerNumBlocks filler)
            it "getBlocksTo unknonw block id " $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
-                   Db.getBlocksTo db unexistingBlockId 1 `shouldReturn` []
+                   Db.getBlocksTo db unexistingBlockId 1 `shouldReturn` Nothing
+           it "getBlocksTo initial block id return initialBlock" $ \db -> property $ \filler -> do
+                   (dbFillerRun filler) db
+                   Db.getBlocksTo db (blockId initialBlock) 1 `shouldReturn` Just [initialBlock]
+           it "getBlocksTo longest head - length is correct" $ \db -> property $ \filler -> do
+                   (dbFillerRun filler) db
+                   (longest, headBlock) <- Db.getLongestHead db
+                   bs <- Db.getBlocksTo db (blockId headBlock) (2*longest)
+                   length <$> bs `shouldBe` Just longest
+           it "getBlocksTo longest head - last is initial" $ \db -> property $ \filler -> do
+                   (dbFillerRun filler) db
+                   (longest, headBlock) <- Db.getLongestHead db
+                   bs <- Db.getBlocksTo db (blockId headBlock) longest                                           
+                   last <$> bs `shouldBe` Just initialBlock
+           it "getBlocksTo longest head - head is head" $ \db -> property $ \filler -> do
+                   (dbFillerRun filler) db
+                   (longest, headBlock) <- Db.getLongestHead db
+                   bs <- Db.getBlocksTo db (blockId headBlock) longest
+                   head <$> bs `shouldBe`
+                           Just headBlock
            it "get initial block" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db                                             
                    Db.getBlock db (blockId initialBlock) `shouldReturn` Just initialBlock

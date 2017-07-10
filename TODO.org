@@ -19,6 +19,7 @@
 ** DONE minimize db - too much responsibilities
 ** DONE make distinguish between loading and pushing (don't write it to disk twice at least)
 ** TODO optimize brag/ask - grow chain at N most, do not send whole blockchain because node is syncing from scratch
+*** TODO fix Networking sync
 ** TODO implement transactions signature
 ** TODO cover shit with unit tests
 ** TODO limit fork depth
@@ -34,3 +35,5 @@
 ** TODO investigate possibility of hard fork due to imperfect p2p
 ** TODO fix hlint issues
 ** TODO implement client/wallet
+** TODO fix weird race condition in "pass findOneBlock"
+** TODO rename blockHash to blockId and use blockId block instead of hash block

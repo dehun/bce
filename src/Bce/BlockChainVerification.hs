@@ -35,7 +35,9 @@ verifyPrevBlockHashCorrect db block
 
 verifyBlockDifficulity db block = do
   let prevHash = (bhPrevBlockHeaderHash $ blockHeader block)
-  prevBlocks <- liftIO $ Db.getBlocksTo db prevHash difficulityRecalculationBlocks
+  prevBlocksOpt <- liftIO $ Db.getBlocksTo db prevHash difficulityRecalculationBlocks
+  guard (isJust prevBlocksOpt) `mplus` left "can not get blocks to"
+  let prevBlocks = fromJust prevBlocksOpt
   let expectedDifficulity = nextDifficulity prevBlocks
   let actualDifficulity = blockDifficulity block
   let stampedDifficulity = fromIntegral $ bhDifficulity $ blockHeader block
@@ -46,10 +48,11 @@ verifyBlockDifficulity db block = do
 blocksForTimeAveraging = 10                         
 verifyBlockTimestamp db block = do
   let blockTimestamp  = bhWallClockTime . blockHeader
-  lastBlocks <- liftIO $ Db.getBlocksTo db (hash block) blocksForTimeAveraging
-  case lastBlocks of
-    [] -> return ()
-    _ -> do
+  lastBlocksOpt <- liftIO $ Db.getBlocksTo db (bhPrevBlockHeaderHash $ blockHeader block) blocksForTimeAveraging
+  case lastBlocksOpt of
+    Nothing -> left $ "can not get blocks to " ++ show (blockId block)
+    Just [] -> return ()
+    Just lastBlocks -> do
       let avgTime = median $ map blockTimestamp lastBlocks
       guard (blockTimestamp block >= avgTime) `mplus` left "block timestamp is incorrect, less than last avg"
 

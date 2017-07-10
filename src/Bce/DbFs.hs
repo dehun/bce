@@ -295,18 +295,18 @@ getBlocksFrom db fromBlockId =
       continue s []
 
 
-getBlocksTo :: Db -> BlockId -> Int -> IO [Block]
+getBlocksTo :: Db -> BlockId -> Int -> IO (Maybe [Block])
 getBlocksTo db toBlockId amount
-    | amount == 0 = return []
-    | toBlockId == hash initialBlock = return []
+    | amount == 0 = return $ Just []
+    | toBlockId == hash initialBlock = return $ Just [initialBlock]
     | otherwise = do
   blockOpt <- loadBlockFromDisk db toBlockId :: IO (Maybe Block)
   case blockOpt of
     Just block -> Lock.with (dbLock db) $ do
                   let prevHash = bhPrevBlockHeaderHash $ blockHeader block
                   prevBlocks <- getBlocksTo db prevHash $ amount - 1
-                  return $ block : prevBlocks
-    Nothing -> return []
+                  return $ (:) <$> blockOpt <*> prevBlocks
+    Nothing -> return Nothing
      
     
 -- txs!
@@ -344,7 +344,7 @@ pushDbTransaction db tx block =
 lastNBlocks :: Db -> Int -> IO [Block]
 lastNBlocks db n = do
     upto <- hash <$> chainHeadBlockHeader <$> longestHead db
-    getBlocksTo db upto n
+    fromJust <$> getBlocksTo db upto n
 
 
 getNextDifficulity :: Db -> IO Difficulity
@@ -352,11 +352,11 @@ getNextDifficulity db = Lock.with (dbLock db) $ do
   blocks <- lastNBlocks db difficulityRecalculationBlocks
   return $ nextDifficulity blocks
 
-getNextDifficulityTo :: Db -> BlockId -> IO Difficulity
+getNextDifficulityTo :: Db -> BlockId -> IO (Maybe Difficulity)
 getNextDifficulityTo db toBlockId = Lock.with (dbLock db) $ do
    blocks <- getBlocksTo db toBlockId difficulityRecalculationBlocks
-   Just blk <- getBlock db toBlockId 
-   return $ nextDifficulity (blk:blocks)
+   blk  <- getBlock db toBlockId 
+   return $ nextDifficulity <$> ((:) <$> blk <*> blocks)
 
 
 singleBlockUnspent :: Block -> (Set.Set TxOutputRef, Set.Set TxOutputRef)
