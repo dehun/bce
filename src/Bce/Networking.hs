@@ -79,7 +79,7 @@ handlePeerMessage net peer msg = do
                case blocksOpt of
                  Just blocks -> do
                      liftIO $ logInfo $ "proposing blocks from " ++ show fromHash
-                     liftIO $ send net peer $ Propose $ take maxBlocksSyncBatch $ blocks
+                     liftIO $ send net peer $ Propose $ blocks
                  Nothing -> do
                      liftIO $ logInfo $ "dunno from hash" ++ show fromHash
                      liftIO $ send net peer $ Dunno
