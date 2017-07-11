@@ -38,18 +38,8 @@ import qualified Bce.BlockChainVerification as Verification
 
 unexistingBlockId = hash "does not exist"
 
-findOneBlock :: Timer -> Set.Set Transaction -> Difficulity -> BlockId -> IO Block
-findOneBlock timer txs target prevBlockId = do
---    putStrLn $ "searching block with target=" ++ show target
-    rnd <- randomIO :: IO Int64
-    time <- timer
-    case Miner.tryGenerateBlock time rnd prevBlockId txs target of
-      Nothing -> findOneBlock timer txs target prevBlockId
-      Just b -> return  b
-                    
-
 spec :: Spec
-spec = do
+spec = parallel $ do
   around withArbitraryDb $ do
     describe "Verification" $ do
       it "passes normal miner blocks" $ \db -> property $ \filler keyPair -> do

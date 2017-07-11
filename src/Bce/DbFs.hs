@@ -10,6 +10,7 @@ module Bce.DbFs
     , getBlocksFrom
     , getBlocksTo
     , getLongestHead
+    , getHeads
     , getBlock
     , getTransactions
     , getDbTransaction
@@ -226,7 +227,7 @@ consumeTransactions db block = do
                        
 pushBlock :: Db -> Block -> IO Bool
 pushBlock db block = Lock.with (dbLock db) $ do
-      logInfo $ "pushing block" ++ show (hash block)
+--      logInfo $ "pushing block" ++ show (hash block)
       pushBlockToDisk db block
       consumeTransactions db block
       pushBlockToRamState db block
@@ -271,6 +272,15 @@ getBlock db hash = Lock.with (dbLock db) $ do
 longestHead :: Db -> IO ChainHead
 longestHead db = maximumBy (comparing chainHeadLength) <$> readIORef (dbHeads db)
 
+
+getHeads :: Db -> IO [(Int, Block)]
+getHeads db = Lock.with (dbLock db) $ do
+                heads <- readIORef $ dbHeads db
+                mapM (\h -> do
+                        let headId = hash $ chainHeadBlockHeader h
+                        Just blk <- loadBlockFromDisk db $ headId
+                        return (chainHeadLength h, blk)
+                     ) $ Set.toList heads
 
 getLongestHead :: Db -> IO (Int, Block)
 getLongestHead db = Lock.with (dbLock db) $ do

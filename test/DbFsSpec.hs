@@ -29,7 +29,7 @@ unexistingBlockId = hash "does not exist"
 
 
 spec :: Spec
-spec = do
+spec = parallel $ do
   around withArbitraryDb $ do
          describe "DbFs database" $ do
            it "empty database have only initial block" $ \db -> do
@@ -51,7 +51,7 @@ spec = do
            it "getBlocksFrom initial block id " $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
                    Just blks <- Db.getBlocksFrom db (blockId initialBlock)
-                   blks `shouldSatisfy` (\bs -> length bs == dbFillerNumBlocks filler)
+                   length blks `shouldBe` dbFillerNumBlocks filler
            it "getBlocksTo unknonw block id " $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
                    Db.getBlocksTo db unexistingBlockId 1 `shouldReturn` Nothing
@@ -79,7 +79,7 @@ spec = do
                    Db.getBlock db (blockId initialBlock) `shouldReturn` Just initialBlock
            it "longest head is correct" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db                                                   
-                   fst <$> (Db.getLongestHead db)  `shouldReturn` (1 + dbFillerNumBlocks filler)
+                   fst <$> (Db.getLongestHead db) `shouldReturn` (1 + dbFillerNumBlocks filler)
            it "database get unknown block" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
                    Db.getBlock db unexistingBlockId `shouldReturn` Nothing

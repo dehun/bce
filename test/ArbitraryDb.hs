@@ -3,10 +3,12 @@ module ArbitraryDb where
 import qualified Bce.DbFs as Db
 import Bce.InitialBlock    
 import qualified Bce.Miner as Miner
+import qualified Bce.VerifiedDb as VerifiedDb    
 import Bce.Hash
 import Bce.Crypto    
 import Bce.BlockChain
 import Bce.BlockChainHash
+import Bce.Difficulity    
 import Bce.TimeStamp
 import Bce.Util    
 
@@ -65,18 +67,44 @@ generateArbitraryTxs db unspent' keys = do
                          Just (tx, spent) -> return (Set.difference unspent spent, tx:txs)
                          Nothing -> return (unspent, txs)) (unspent', []) [1..numArbTxs]
   return txs
-    
+
+
+findOneBlock :: Timer -> Set.Set Transaction -> Difficulity -> BlockId -> IO Block
+findOneBlock timer txs target prevBlockId = do
+    rnd <- randomIO :: IO Int64
+    time <- timer
+    case Miner.tryGenerateBlock time rnd prevBlockId txs target of
+      Nothing -> findOneBlock timer txs target prevBlockId
+      Just b -> return  b
+
 instance Arbitrary DbFiller where
     arbitrary = do
-      blocksNum <- choose (0, 32) :: Gen Int
-      keys <- mapM (\_ -> arbitrary) [1..blocksNum]
-      return $ DbFiller (\db -> mapM_ (\k -> do
-                                         (_, topBlock) <- Db.getLongestHead db
-                                         unspent <- Db.unspentAt db (blockId topBlock)
-                                         txs <- generateArbitraryTxs db unspent keys
-                                         Db.pushTransactions db (Set.fromList txs)
-                                         Miner.growOneBlock db (keyPairPub k) now
-                                      )  keys) blocksNum $ Set.fromList keys
+      blocksNum <- choose (0, 16) :: Gen Int
+      maxHeadsNum <- choose (1, 4) :: Gen Int
+      keys <- mapM (\_ -> arbitrary) [1..blocksNum+1]
+      let runFiller = (\db -> do
+                           (actualBlocksNum, _) <- Db.getLongestHead db
+                           if actualBlocksNum > blocksNum
+                           then do
+                             return()
+                           else do
+                             heads <- Db.getHeads db
+                             rnd <- randomIO :: IO Int
+                             let (arbHeadLength, arbHeadBlock) = heads !! (rnd `mod` length heads)
+                             let blocksBack = if length heads > maxHeadsNum then 1 else arbHeadLength
+                             Just blocks <- Db.getBlocksTo db (blockId arbHeadBlock) blocksBack
+                             let arbBlock = blocks !! (rnd `mod` length blocks)
+                             let arbKey = keys !! (rnd `mod` length keys)
+                             unspent <- Db.unspentAt db (blockId arbBlock)
+                             utxs <- Set.fromList <$> generateArbitraryTxs db unspent keys
+                             ctx <- Miner.coinbaseTransaction db (keyPairPub arbKey) utxs
+                             let txs = Set.insert ctx utxs
+                             Just target <- Db.getNextDifficulityTo db $ blockId arbBlock
+                             blk <- findOneBlock now txs target $ blockId arbBlock
+                             r <- VerifiedDb.verifyAndPushBlock db blk
+                             if not r then error "rejected block"
+                             else runFiller db)
+      return $ DbFiller runFiller  blocksNum $ Set.fromList keys
 
 testDbPath = "./tmpdb"
 
