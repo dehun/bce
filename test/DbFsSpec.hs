@@ -30,7 +30,7 @@ unexistingBlockId = hash "does not exist"
 
 spec :: Spec
 spec = do
-  around (withDb testDbPath) $ do
+  around withArbitraryDb $ do
          describe "DbFs database" $ do
            it "empty database have only initial block" $ \db -> do
                    Db.getLongestHead db `shouldReturn` (1, initialBlock)
@@ -113,18 +113,27 @@ spec = do
                    let totalCoins = sum (map outputAmount resolves)
                    totalCoins `shouldBe`
                               fromIntegral (Db.baseCoinbaseReward * (fromIntegral $ 1 + dbFillerNumBlocks filler))
-           it "loads properly" $ \db -> property $ \filler -> do
+           it "loads properly" $ \db -> property $ \filler (DbPath arbDbPath) -> do
+                   pendingWith "do proper copy "
                    (dbFillerRun filler) db
-                   (_, topBlock) <- Db.getLongestHead db                                        
+                   (_, topBlock) <- Db.getLongestHead db
                    oldUnspent <- Set.toList <$> Db.unspentAt db (blockId topBlock)
-                   Db.unsafeCloseDb db
-                   newDb <- Db.initDb testDbPath
+                   -- prepare new dir
+                   createDirectoryIfMissing False arbDbPath
+                   toCopy <- filter (\p -> or [ p == "transactions.db"
+                                              , p == "blocks.db"
+                                              , dropWhile (/='.') p == ".blk"]) <$> listDirectory (Db.dbDataDir db)
+                   mapM_ (\f -> copyFile ((Db.dbDataDir db) ++ "/" ++ f) ((arbDbPath ++ "/" ++ f))) toCopy
+                   -- kill old one
+                   flushDb db
+                   
+                   newDb <- Db.initDb arbDbPath
                    Db.loadDb newDb
                    fst <$> (Db.getLongestHead newDb)  `shouldReturn` (1 + dbFillerNumBlocks filler)
                    (_, topBlock) <- Db.getLongestHead newDb                                        
                    newUnspent <- Set.toList <$> Db.unspentAt newDb (blockId topBlock)                       
-                   Db.unsafeCloseDb newDb
                    oldUnspent `shouldBe` newUnspent
+                   flushDb newDb
                    
 
                                         

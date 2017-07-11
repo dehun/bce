@@ -80,13 +80,19 @@ instance Arbitrary DbFiller where
 testDbPath = "./tmpdb"
 
 flushDb db = do
-  Db.unsafeCloseDb db
-  removeDirectoryRecursive (Db.dbDataDir db)
+  Db.unsafeCloseDb db (removeDirectoryRecursive (Db.dbDataDir db))
 
 withDb :: String -> (Db.Db -> IO()) -> IO ()
 withDb path = bracket (Db.initDb path) flushDb
 
+data DbPath = DbPath String deriving (Show, Eq)
+instance Arbitrary DbPath where
+    arbitrary = do
+        a <- arbitrary :: Gen Int64
+        let p = show $ hash a
+        return $ DbPath  p
+              
 withArbitraryDb :: (Db.Db -> IO()) -> IO ()
 withArbitraryDb fx = do
-  arbPath <- show <$> hash <$> (randomIO :: IO Int64)
+  DbPath arbPath <- generate arbitrary
   withDb arbPath fx

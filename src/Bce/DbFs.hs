@@ -39,7 +39,7 @@ import Bce.Logger
 import Bce.Crypto
 import Bce.Cache    
 
-import Debug.Trace    
+import Debug.Trace
 import GHC.Generics (Generic)
 import GHC.Int(Int64, Int32)
 import Data.IORef
@@ -56,6 +56,7 @@ import Data.List
 import Data.Ord    
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad
+import System.Mem.Weak    
 
 import qualified Data.Set as Set
 import qualified Data.Map as Map        
@@ -116,11 +117,9 @@ initDb dataDir =  do
   pushDbTransaction db (head $ Set.toList $ blockTransactions initialBlock) initialBlock
   return db
 
-unsafeCloseDb :: Db -> IO ()
-unsafeCloseDb db = do
-    LevelDbInt.unsafeClose (dbBlocksIndex db)
-    LevelDbInt.unsafeClose (dbTxIndex db)              
-    
+unsafeCloseDb :: Db -> IO () -> IO ()
+unsafeCloseDb db fx = do
+  addFinalizer db fx
 
 nextBlocks :: Db -> Hash -> IO (Set.Set Hash)
 nextBlocks db prevBlockHash = do
@@ -179,7 +178,10 @@ pushBlockToDisk db block = do
     LevelDb.put (dbBlocksIndex db) def (hashBs prevBlockHash)
                (BSL.toStrict $ BinPut.runPut $ Bin.put newNextBlocks)
     mapM_ (\tx -> pushDbTransaction db tx block) $ blockTransactions block
-    logDebug $  "pushed block to disk, blockid=" ++ show (blockId block)                            
+    logDebug $  "pushed block to disk, blockid=" ++ show (blockId block)
+    v <- isBlockExists db (blockId block)
+    if not v then error "block does not exist now!"
+    else return()
 
 
 chainLength :: Db -> Hash -> IO Int
@@ -355,8 +357,7 @@ getNextDifficulity db = Lock.with (dbLock db) $ do
 getNextDifficulityTo :: Db -> BlockId -> IO (Maybe Difficulity)
 getNextDifficulityTo db toBlockId = Lock.with (dbLock db) $ do
    blocks <- getBlocksTo db toBlockId difficulityRecalculationBlocks
-   blk  <- getBlock db toBlockId 
-   return $ nextDifficulity <$> ((:) <$> blk <*> blocks)
+   return $ nextDifficulity <$> blocks
 
 
 singleBlockUnspent :: Block -> (Set.Set TxOutputRef, Set.Set TxOutputRef)

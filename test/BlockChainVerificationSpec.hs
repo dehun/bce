@@ -11,7 +11,9 @@ import Bce.BlockChain
 import Bce.Difficulity    
 import Bce.BlockChainHash
 import Bce.TimeStamp
-import Bce.Util    
+import Bce.Util
+
+import ArbitraryDb    
 
 import Debug.Trace    
 import Test.Hspec
@@ -31,7 +33,6 @@ import qualified Data.ByteString as BS
 import Data.ByteString.Arbitrary
 import Control.Monad
 import System.Random
-import ArbitraryDb
 
 import qualified Bce.BlockChainVerification as Verification
 
@@ -39,7 +40,7 @@ unexistingBlockId = hash "does not exist"
 
 findOneBlock :: Timer -> Set.Set Transaction -> Difficulity -> BlockId -> IO Block
 findOneBlock timer txs target prevBlockId = do
-    putStrLn $ "searching block with target=" ++ show target
+--    putStrLn $ "searching block with target=" ++ show target
     rnd <- randomIO :: IO Int64
     time <- timer
     case Miner.tryGenerateBlock time rnd prevBlockId txs target of
@@ -52,16 +53,15 @@ spec = do
   around withArbitraryDb $ do
     describe "Verification" $ do
       it "passes normal miner blocks" $ \db -> property $ \filler keyPair -> do
-         (dbFillerRun filler) db                                                 
+         (dbFillerRun filler) db
          blk <- Miner.findBlock db (keyPairPub keyPair) now
          r <- runEitherT $ Verification.verifyBlock db blk
          r `shouldSatisfy` isRight
       it "passes findOneBlock" $ \db -> property $ \filler keyPair rnd -> do
-         pendingWith "werid rance condition!"
          (dbFillerRun filler) db
          Just blocksFrom <- Db.getBlocksFrom db (blockId initialBlock)
          let idx = (abs rnd) `mod` length blocksFrom
-         putStrLn $ "blocks are" ++ show (map (show . hash) blocksFrom)
+--         putStrLn $ "blocks are" ++ show (map (show . hash) blocksFrom)
          let block = if blocksFrom == [] then initialBlock else blocksFrom !! idx
          Just target <- Db.getNextDifficulityTo db (blockId block)
          cbtx <- Miner.coinbaseTransaction db (keyPairPub keyPair) Set.empty
