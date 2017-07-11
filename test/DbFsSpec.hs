@@ -29,9 +29,9 @@ unexistingBlockId = hash "does not exist"
 
 
 spec :: Spec
-spec = parallel $ do
+spec = do
   around withArbitraryDb $ do
-         describe "DbFs database" $ do
+         describe "DbFs database" $ parallel $ do
            it "empty database have only initial block" $ \db -> do
                    Db.getLongestHead db `shouldReturn` (1, initialBlock)
            it "empty database getBlocksFrom " $ \db -> do

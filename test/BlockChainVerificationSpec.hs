@@ -39,9 +39,9 @@ import qualified Bce.BlockChainVerification as Verification
 unexistingBlockId = hash "does not exist"
 
 spec :: Spec
-spec = parallel $ do
+spec =  do
   around withArbitraryDb $ do
-    describe "Verification" $ do
+    describe "Verification" $ parallel $ do
       it "passes normal miner blocks" $ \db -> property $ \filler keyPair -> do
          (dbFillerRun filler) db
          blk <- Miner.findBlock db (keyPairPub keyPair) now
