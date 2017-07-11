@@ -65,15 +65,18 @@ spec = parallel $ do
          b <- findOneBlock now (Set.singleton cbtx) target unexistingBlockId
          r <- runEitherT $ Verification.verifyBlock db b
          r `shouldSatisfy` isLeft
-      it "catches wrong transactions hash mismatch" $ \db -> property $ \filler keyPair -> do
+      it "catches wrong transactions hash mismatch" $ \db -> property $ \filler keyPair rnd -> do
          (dbFillerRun filler) db
-         target <- Db.getNextDifficulity db
+         Just blocksFrom <- Db.getBlocksFrom db (blockId initialBlock)
+         let idx = (abs rnd) `mod` length blocksFrom
+         let block = if blocksFrom == [] then initialBlock else blocksFrom !! idx                              
+         Just target <- Db.getNextDifficulityTo db (blockId block)
          cbtx <- Miner.coinbaseTransaction db (keyPairPub keyPair) Set.empty
-         b <- findOneBlock now (Set.singleton cbtx) target unexistingBlockId
-         (_, topBlock) <- Db.getLongestHead db                                  
-         unspent <- Db.unspentAt db (blockId topBlock)
+         b <- findOneBlock now (Set.singleton cbtx) target (blockId block)
+         unspent <- Db.unspentAt db (blockId block)
          Just (ntx, _) <- generateArbitraryTx db unspent (Set.toList $ dbFillerKeys filler)
          let nb = b {blockTransactions = Set.insert ntx $ blockTransactions b}
          r <- runEitherT $ Verification.verifyBlock db nb
-         r `shouldSatisfy` isLeft                   
+         r `shouldSatisfy` isLeft
+         r `shouldSatisfy` (\(Left m) -> "wrong stamped transactions hash" `isInfixOf` m)
                                  
