@@ -25,7 +25,8 @@ import Control.Monad
 import System.Random    
 
 data DbFiller = DbFiller { dbFillerRun :: Db.Db -> IO ()
-                         , dbFillerNumBlocks :: Int}
+                         , dbFillerNumBlocks :: Int
+                         , dbFillerKeys :: Set.Set KeyPair}
 instance Show DbFiller where
     show f = "DbFiller with N=" ++ show (dbFillerNumBlocks f)
 
@@ -75,7 +76,7 @@ instance Arbitrary DbFiller where
                                          txs <- generateArbitraryTxs db unspent keys
                                          Db.pushTransactions db (Set.fromList txs)
                                          Miner.growOneBlock db (keyPairPub k) now
-                                      )  keys) blocksNum
+                                      )  keys) blocksNum $ Set.fromList keys
 
 testDbPath = "./tmpdb"
 

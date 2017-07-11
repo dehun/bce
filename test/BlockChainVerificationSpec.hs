@@ -75,4 +75,15 @@ spec = do
          b <- findOneBlock now (Set.singleton cbtx) target unexistingBlockId
          r <- runEitherT $ Verification.verifyBlock db b
          r `shouldSatisfy` isLeft
+      it "catches wrong transactions hash mismatch" $ \db -> property $ \filler keyPair -> do
+         (dbFillerRun filler) db
+         target <- Db.getNextDifficulity db
+         cbtx <- Miner.coinbaseTransaction db (keyPairPub keyPair) Set.empty
+         b <- findOneBlock now (Set.singleton cbtx) target unexistingBlockId
+         (_, topBlock) <- Db.getLongestHead db                                  
+         unspent <- Db.unspentAt db (blockId topBlock)
+         Just (ntx, _) <- generateArbitraryTx db unspent (Set.toList $ dbFillerKeys filler)
+         let nb = b {blockTransactions = Set.insert ntx $ blockTransactions b}
+         r <- runEitherT $ Verification.verifyBlock db nb
+         r `shouldSatisfy` isLeft                   
                                  
