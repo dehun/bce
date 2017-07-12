@@ -77,7 +77,7 @@ spec =  do
          (target, block) <- arbitraryPointToBuild db maxHeads rnd 
          cbtx <- Miner.coinbaseTransaction db (keyPairPub keyPair) Set.empty                              
          t <- now 
-         b <- findOneBlock (return $ t - 10^5) (Set.singleton cbtx) target (blockId block)
+         b <- findOneBlock (return $ t - 10^9) (Set.singleton cbtx) target (blockId block)
          r <- runEitherT $ Verification.verifyBlock db b
          r `shouldSatisfy` isLeft
          r `shouldSatisfy` (\(Left m) -> "block timestamp is incorrect" `isInfixOf` m)           
