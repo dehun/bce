@@ -91,7 +91,7 @@ arbitraryPointToBuild db maxHeadsNum rnd = do
 
 instance Arbitrary DbFiller where
     arbitrary = do
-      blocksNum <- choose (0, 64) :: Gen Int
+      blocksNum <- choose (0, 32) :: Gen Int
       maxHeadsNum <- choose (1, 3) :: Gen Int
       keys <- mapM (\_ -> arbitrary) [1..1+blocksNum]
       let runFiller = (\db -> do
