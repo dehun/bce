@@ -21,9 +21,9 @@ verifyAndPushBlock :: Db.Db -> Block -> IO Bool
 verifyAndPushBlock db block =
   Db.transactionally db $ do
     verificationResult <- runEitherT $ verifyBlock db block
-    case  verificationResult of
-      Right _ -> do
-        Db.pushBlock db block
+    case verificationResult of
+      Right vblk -> do
+        Db.pushBlock db vblk
       Left err -> do
         logWarning $ "verification  pushing block failed: " ++ err
         return False
@@ -31,8 +31,8 @@ verifyAndPushBlock db block =
 
 verifyAndPushTransactions :: Db.Db -> Set.Set Transaction -> IO (Either String ())
 verifyAndPushTransactions db txs = Db.transactionally db $ runEitherT $ do
-  mapM (verifyTransactionTransaction db) $ Set.toList txs
-  liftIO $ Db.pushTransactions db txs
+  vtxs <- mapM (verifyTransactionTransaction db) $ Set.toList txs
+  liftIO $ Db.pushTransactions db $ Set.fromList vtxs
 
 
                

@@ -29,6 +29,7 @@ module Bce.DbFs
         where
 
 import Bce.BlockChain
+import Bce.Verified
 import Bce.InitialBlock    
 import Bce.Hash
 import Bce.BlockChainHash
@@ -127,15 +128,15 @@ nextBlocks db prevBlockHash = do
   nextBlocksBs <- LevelDb.get (dbBlocksIndex db) def (hashBs prevBlockHash) 
   return $ fromMaybe Set.empty $ (BinGet.runGet Bin.get <$> (BSL.fromStrict <$> nextBlocksBs))
 
-loadBlock :: Db -> Block -> IO ()
+loadBlock :: Db -> VerifiedBlock -> IO ()
 loadBlock db block = do
-  pushBlockToRamState db block
+  pushBlockToRamState db (verifiedBlock block)
 
 
 loadDb :: Db -> IO ()
 loadDb db =  Lock.with (dbLock db) $ do
     logInfo "loading database"
-    pushBlock db initialBlock
+    pushBlock db (VerifiedBlock initialBlock)
     continue (hash initialBlock)
     head <- longestHead db
     logInfo $ "loaded blocks, longest head is " ++ show (chainHeadLength head) 
@@ -145,7 +146,7 @@ loadDb db =  Lock.with (dbLock db) $ do
             logDebug $ "loading " ++ show nextBlocksHashes
             mapM_ (\nb -> loadBlock db nb)  nextBlocks
             heads <- readIORef (dbHeads db) 
-            mapM_ (\b -> continue (hash  b)) nextBlocks
+            mapM_ (\b -> continue (blockId $ verifiedBlock b)) nextBlocks
 
 
 dbBlockPath :: Db -> Hash -> Path
@@ -157,11 +158,11 @@ blockPath dataDir blockHash = dataDir ++ "/" ++ show blockHash ++ ".blk"
 isBlockExists :: Db -> Hash -> IO Bool
 isBlockExists db blockId = isJust <$> loadBlockFromDisk db blockId
                   
-loadBlockFromDisk :: Db -> Hash -> IO (Maybe Block)
+loadBlockFromDisk :: Db -> Hash -> IO (Maybe VerifiedBlock)
 loadBlockFromDisk db blockHash = Lock.with (dbLock db) $ 
     Exception.catch (do
                       content <- BS.readFile (dbBlockPath db blockHash)
-                      return $ Just $ (BinGet.runGet Bin.get (BSL.fromStrict content))
+                      return $ Just $ VerifiedBlock $ (BinGet.runGet Bin.get (BSL.fromStrict content))
                     ) (\e -> do
                          let err = show (e :: Exception.SomeException)
                          logDebug $ "error occured on block loading " ++ err
@@ -189,7 +190,7 @@ chainLength :: Db -> Hash -> IO Int
 chainLength db blockHash
     | blockHash == hash initialBlock = return 1
     | otherwise = do
-        Just block <- loadBlockFromDisk db blockHash
+        Just (VerifiedBlock block) <- loadBlockFromDisk db blockHash
         let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader block
         (+1) <$> chainLength db prevBlockHash
 
@@ -225,8 +226,8 @@ consumeTransactions db block = do
   writeIORef (dbTransactions db) newTxs
 
                        
-pushBlock :: Db -> Block -> IO Bool
-pushBlock db block = Lock.with (dbLock db) $ do
+pushBlock :: Db -> VerifiedBlock -> IO Bool
+pushBlock db (VerifiedBlock block) = Lock.with (dbLock db) $ do
 --      logInfo $ "pushing block" ++ show (hash block)
       pushBlockToDisk db block
       consumeTransactions db block
@@ -265,7 +266,7 @@ pushBlockToRamState db block
 
 
 
-getBlock :: Db -> Hash -> IO (Maybe Block)
+getBlock :: Db -> Hash -> IO (Maybe VerifiedBlock)
 getBlock db hash = Lock.with (dbLock db) $ do
     loadBlockFromDisk db hash
 
@@ -273,7 +274,7 @@ longestHead :: Db -> IO ChainHead
 longestHead db = maximumBy (comparing chainHeadLength) <$> readIORef (dbHeads db)
 
 
-getHeads :: Db -> IO [(Int, Block)]
+getHeads :: Db -> IO [(Int, VerifiedBlock)]
 getHeads db = Lock.with (dbLock db) $ do
                 heads <- readIORef $ dbHeads db
                 mapM (\h -> do
@@ -282,7 +283,7 @@ getHeads db = Lock.with (dbLock db) $ do
                         return (chainHeadLength h, blk)
                      ) $ Set.toList heads
 
-getLongestHead :: Db -> IO (Int, Block)
+getLongestHead :: Db -> IO (Int, VerifiedBlock)
 getLongestHead db = Lock.with (dbLock db) $ do
   head <- longestHead db
   let headId = hash $ chainHeadBlockHeader head
@@ -298,7 +299,7 @@ getBlocksFrom db fromBlockId =
             | otherwise = do
                  b <- loadBlockFromDisk db bh
                  case b of
-                   Just block ->  do
+                   Just (VerifiedBlock block) ->  do
                        let nh = bhPrevBlockHeaderHash $ blockHeader block
                        continue nh (block:acc)
                    Nothing -> return Nothing
@@ -307,14 +308,14 @@ getBlocksFrom db fromBlockId =
       continue s []
 
 
-getBlocksTo :: Db -> BlockId -> Int -> IO (Maybe [Block])
+getBlocksTo :: Db -> BlockId -> Int -> IO (Maybe [VerifiedBlock])
 getBlocksTo db toBlockId amount
     | amount == 0 = return $ Just []
-    | toBlockId == hash initialBlock = return $ Just [initialBlock]
-    | otherwise = do
-  blockOpt <- loadBlockFromDisk db toBlockId :: IO (Maybe Block)
+    | toBlockId == hash initialBlock = return $ Just [VerifiedBlock initialBlock]
+    | otherwise = Lock.with (dbLock db) $ do 
+  blockOpt <- loadBlockFromDisk db toBlockId
   case blockOpt of
-    Just block -> Lock.with (dbLock db) $ do
+    Just (VerifiedBlock block) -> do
                   let prevHash = bhPrevBlockHeaderHash $ blockHeader block
                   prevBlocks <- getBlocksTo db prevHash $ amount - 1
                   return $ (:) <$> blockOpt <*> prevBlocks
@@ -327,9 +328,10 @@ getTransactions db = Lock.with (dbLock db) $ do
                        readIORef $ dbTransactions db
 
 
-pushTransactions :: Db -> Set.Set Transaction -> IO ()
-pushTransactions db newTransactions =
+pushTransactions :: Db -> Set.Set VerifiedTransaction -> IO ()
+pushTransactions db newVTransactions =
     Lock.with (dbLock db) $ do
+      let newTransactions = Set.fromList $ map verifiedTransaction $ Set.toList newVTransactions
       oldTransactions <- readIORef (dbTransactions db)
       writeIORef (dbTransactions db) (Set.union oldTransactions newTransactions)
 
@@ -342,8 +344,8 @@ getDbTransaction :: Db -> TransactionId -> IO (Maybe Transaction)
 getDbTransaction db txId = Lock.with (dbLock db) $ runMaybeT $ do
     txBin <- MaybeT $ liftIO $ LevelDb.get (dbTxIndex db) def (hashBs txId)
     let txref = BinGet.runGet Bin.get (BSL.fromStrict txBin) :: TransactionRef
-    block <- MaybeT $  loadBlockFromDisk db (txrefBlock txref)
-    liftMaybe $ (Set.toList $ blockTransactions block) `at` (fromIntegral $ txrefIdx txref)
+    VerifiedBlock block <- MaybeT $  loadBlockFromDisk db (txrefBlock txref)
+    liftMaybe $ (Set.toList $ blockTransactions $ block) `at` (fromIntegral $ txrefIdx txref)
 
 pushDbTransaction :: Db -> Transaction -> Block -> IO ()
 pushDbTransaction db tx block =
@@ -353,7 +355,7 @@ pushDbTransaction db tx block =
            (BSL.toStrict $ BinPut.runPut $ Bin.put $ txRef)
 
 
-lastNBlocks :: Db -> Int -> IO [Block]
+lastNBlocks :: Db -> Int -> IO [VerifiedBlock]
 lastNBlocks db n = do
     upto <- hash <$> chainHeadBlockHeader <$> longestHead db
     fromJust <$> getBlocksTo db upto n
@@ -362,12 +364,12 @@ lastNBlocks db n = do
 getNextDifficulity :: Db -> IO Difficulity
 getNextDifficulity db = Lock.with (dbLock db) $ do
   blocks <- lastNBlocks db difficulityRecalculationBlocks
-  return $ nextDifficulity blocks
+  return $ nextDifficulity $ map verifiedBlock blocks
 
 getNextDifficulityTo :: Db -> BlockId -> IO (Maybe Difficulity)
 getNextDifficulityTo db toBlockId = Lock.with (dbLock db) $ do
    blocks <- getBlocksTo db toBlockId difficulityRecalculationBlocks
-   return $ nextDifficulity <$> blocks
+   return $ nextDifficulity <$> ((map verifiedBlock) `fmap` blocks)
 
 
 singleBlockUnspent :: Block -> (Set.Set TxOutputRef, Set.Set TxOutputRef)
@@ -396,7 +398,7 @@ unspentAt db uptoBlock =
             case cached of
               Just val -> return (Set.difference (Set.union unspent val) spent)
               Nothing -> do
-                          Just block <- loadBlockFromDisk db h
+                          Just (VerifiedBlock block) <- loadBlockFromDisk db h
                           let txs = blockTransactions block
                           let (income, spendings) = singleBlockUnspent block
                           let newUnspent = Set.difference (Set.union unspent income) (Set.union spent spendings)

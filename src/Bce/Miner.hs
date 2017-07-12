@@ -1,6 +1,7 @@
 module Bce.Miner where
 
 import Bce.Crypto
+import Bce.Verified    
 import Bce.Hash
 import Bce.BlockChain
 import Bce.BlockChainHash    
@@ -52,7 +53,7 @@ findBlock db ownerKey timer = do
     rtxs <- Db.getTransactions db
     cbtx <- coinbaseTransaction db ownerKey rtxs
     txs <- Set.insert cbtx <$> Db.getTransactions db
-    (_, topBlock) <- Db.getLongestHead db
+    (_, VerifiedBlock topBlock) <- Db.getLongestHead db
     next <- tryGenerateBlock time rnd <$> pure (blockId topBlock) <*> pure txs  <*> Db.getNextDifficulity db
     case next of
         Just blk -> return  blk
@@ -62,7 +63,7 @@ growOneBlock :: Db.Db -> PubKey -> Timer -> IO ()
 growOneBlock db ownerKey timer = do
      nextBlock <- findBlock db ownerKey timer
      v <- VerifiedDb.verifyAndPushBlock db nextBlock
-     (headLength, topBlock) <- Db.getLongestHead db
+     (headLength, VerifiedBlock topBlock) <- Db.getLongestHead db
      nextDiff <- Db.getNextDifficulity db
      logDebug $ "got chain of length " ++ show headLength
                   ++ "; block difficulity is " ++ (show $ blockDifficulity topBlock)

@@ -62,12 +62,12 @@ blockId = hash
 
 -- TODO: move this away!
 instance Ord Transaction where
-    compare = comparing show
+    compare = comparing hash
 
 instance Ord TxOutput where
-    compare = comparing show
+    compare = comparing hash
 
 instance Ord TxInput where
-    compare = comparing show
+    compare = comparing hash
 
               

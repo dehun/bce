@@ -6,7 +6,8 @@ import qualified Bce.BlockChain as BlockChain
 import qualified Bce.DbFs as Db
 import qualified Bce.VerifiedDb as VerifiedDb
 import qualified Bce.P2p as P2p
-import Bce.Logger    
+import Bce.Logger
+import Bce.Verified    
 import Bce.Hash
 import Bce.BlockChainHash
 import Bce.Util
@@ -59,7 +60,7 @@ handlePeerMessage net peer msg = do
     liftIO $ logDebug $ "got message " ++ show msg
     case msg of
       Brag braggedLen -> do
-               (dbLen, topBlock) <- liftIO $ Db.getLongestHead db
+               (dbLen, VerifiedBlock topBlock) <- liftIO $ Db.getLongestHead db
                if dbLen < braggedLen
                then do
                  liftIO $ logInfo $ "saw bragger with length!" ++ show braggedLen
@@ -68,7 +69,7 @@ handlePeerMessage net peer msg = do
                  then liftIO $ logDebug "already syncing from that bragger"
                  else do
                    liftIO $ logInfo $  "starting sync from " ++ show peer
-                   let askFrom = hash topBlock
+                   let askFrom = blockId topBlock
                    let newSync = NetworkBlocksSyncState 1 askFrom
                    let ns = s{networkListenerActiveSyncs=Map.insert peer newSync $ networkListenerActiveSyncs s}
                    put ns
@@ -99,7 +100,7 @@ handlePeerMessage net peer msg = do
                      oldBlocksOpt <- liftIO $ Db.getBlocksTo db oldFromHash askSkipInterval
                      let newFromHash = case oldBlocksOpt of
                                          Nothing -> blockId initialBlock
-                                         Just oldBlocks -> hash $ last oldBlocks
+                                         Just oldBlocks -> blockId $ verifiedBlock $ last oldBlocks
                      let newSyncState = oldSyncState{ networkBlocksSyncAccelerationKoef =
                                                          1 + networkBlocksSyncAccelerationKoef oldSyncState
                                                     , networkBlockSyncLastAsk = newFromHash }

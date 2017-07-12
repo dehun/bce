@@ -5,7 +5,8 @@ import Bce.InitialBlock
 import qualified Bce.Miner as Miner
 import qualified Bce.VerifiedDb as VerifiedDb    
 import Bce.Hash
-import Bce.Crypto    
+import Bce.Crypto
+import Bce.Verified    
 import Bce.BlockChain
 import Bce.BlockChainHash
 import Bce.Difficulity    
@@ -82,22 +83,21 @@ arbitraryPointToBuild db maxHeadsNum rnd = do
   heads <- Db.getHeads db
   let Just (arbHeadLength, arbHeadBlock) = randomPick heads rnd
   let blocksBack = if length heads > maxHeadsNum then 1 else arbHeadLength
-  Just blocks <- Db.getBlocksTo db (blockId arbHeadBlock) blocksBack
+  Just blocks <- Db.getBlocksTo db (blockId $ verifiedBlock arbHeadBlock) blocksBack
   let Just arbBlock = randomPick blocks rnd 
-  Just target <- Db.getNextDifficulityTo db (blockId arbBlock)
-  return (target, arbBlock)
+  Just target <- Db.getNextDifficulityTo db (blockId $ verifiedBlock arbBlock)
+  return (target, verifiedBlock arbBlock)
 
 
 instance Arbitrary DbFiller where
     arbitrary = do
       blocksNum <- choose (0, 64) :: Gen Int
       maxHeadsNum <- choose (1, 3) :: Gen Int
-      keys <- mapM (\_ -> arbitrary) [1..blocksNum+1]
+      keys <- mapM (\_ -> arbitrary) [1..1+blocksNum]
       let runFiller = (\db -> do
                            (actualBlocksNum, _) <- Db.getLongestHead db
                            if actualBlocksNum > blocksNum
-                           then do
-                             return()
+                           then return()
                            else do
                              rnd <- randomIO :: IO Int
                              (target, arbBlock) <- arbitraryPointToBuild db maxHeadsNum rnd

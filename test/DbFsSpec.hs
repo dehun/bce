@@ -4,6 +4,7 @@ import qualified Bce.DbFs as Db
 import Bce.InitialBlock    
 import qualified Bce.Miner as Miner
 import Bce.Hash
+import Bce.Verified    
 import Bce.Crypto    
 import Bce.BlockChain
 import Bce.BlockChainHash
@@ -33,7 +34,7 @@ spec = do
   around withArbitraryDb $ do
          describe "DbFs database" $ parallel $ do
            it "empty database have only initial block" $ \db -> do
-                   Db.getLongestHead db `shouldReturn` (1, initialBlock)
+                   Db.getLongestHead db `shouldReturn` (1, verifiedInitialBlock)
            it "empty database getBlocksFrom " $ \db -> do
                    Db.getBlocksFrom db (blockId initialBlock) `shouldReturn` Just []
            it "empty database have only one unspent" $ \db -> do
@@ -44,7 +45,7 @@ spec = do
            it "empty database getBlocksFrom unknown block id " $ \db -> do
                    Db.getBlocksFrom db (hash unexistingBlockId) `shouldReturn` Nothing
            it "empty database getBlocksTo initial block id " $ \db -> 
-                   Db.getBlocksTo db (blockId initialBlock) 1 `shouldReturn` Just [initialBlock]
+                   Db.getBlocksTo db (blockId initialBlock) 1 `shouldReturn` Just [verifiedInitialBlock]
            it "getBlocksFrom unknown block id " $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
                    Db.getBlocksFrom db (hash unexistingBlockId) `shouldReturn` Nothing
@@ -57,26 +58,25 @@ spec = do
                    Db.getBlocksTo db unexistingBlockId 1 `shouldReturn` Nothing
            it "getBlocksTo initial block id return initialBlock" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
-                   Db.getBlocksTo db (blockId initialBlock) 1 `shouldReturn` Just [initialBlock]
+                   Db.getBlocksTo db (blockId initialBlock) 1 `shouldReturn` Just [verifiedInitialBlock]
            it "getBlocksTo longest head - length is correct" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
-                   (longest, headBlock) <- Db.getLongestHead db
+                   (longest, VerifiedBlock  headBlock) <- Db.getLongestHead db
                    bs <- Db.getBlocksTo db (blockId headBlock) (2*longest)
                    length <$> bs `shouldBe` Just longest
            it "getBlocksTo longest head - last is initial" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
-                   (longest, headBlock) <- Db.getLongestHead db
+                   (longest, VerifiedBlock headBlock) <- Db.getLongestHead db
                    bs <- Db.getBlocksTo db (blockId headBlock) longest                                           
-                   last <$> bs `shouldBe` Just initialBlock
+                   last <$> bs `shouldBe` Just verifiedInitialBlock
            it "getBlocksTo longest head - head is head" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
-                   (longest, headBlock) <- Db.getLongestHead db
+                   (longest, VerifiedBlock headBlock) <- Db.getLongestHead db
                    bs <- Db.getBlocksTo db (blockId headBlock) longest
-                   head <$> bs `shouldBe`
-                           Just headBlock
+                   head <$> bs `shouldBe` Just (VerifiedBlock headBlock)
            it "get initial block" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db                                             
-                   Db.getBlock db (blockId initialBlock) `shouldReturn` Just initialBlock
+                   Db.getBlock db (blockId initialBlock) `shouldReturn` Just verifiedInitialBlock
            it "longest head is correct" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db                                                   
                    fst <$> (Db.getLongestHead db) `shouldReturn` (1 + dbFillerNumBlocks filler)
@@ -91,7 +91,7 @@ spec = do
                    Db.isBlockExists db (blockId initialBlock) `shouldReturn` True
            it "head block does exists" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
-                   (_, block) <- Db.getLongestHead db
+                   (_, VerifiedBlock block) <- Db.getLongestHead db
                    Db.isBlockExists db (blockId block) `shouldReturn` True
            it "resolveInputOutput on empty db" $ \db -> do
                    let initTx = head $ Set.toList $ blockTransactions $ initialBlock
@@ -99,14 +99,14 @@ spec = do
                    o `shouldSatisfy` isJust
            it "all unspents are there" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
-                   (_, topBlock) <- Db.getLongestHead db
+                   (_, VerifiedBlock topBlock) <- Db.getLongestHead db
                    unspent <- Set.toList <$> Db.unspentAt db (blockId topBlock)
                    mapM_ (\u -> do
                            r <- Db.resolveInputOutput db (TxInput u)
                            r `shouldSatisfy` isJust) unspent
            it "does not loose money" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
-                   (_, topBlock) <- Db.getLongestHead db
+                   (_, VerifiedBlock topBlock) <- Db.getLongestHead db
                    unspent <- Set.toList <$> Db.unspentAt db (blockId topBlock)
                    resolvesOpts <- mapM (\u -> Db.resolveInputOutput db (TxInput u)) unspent
                    let Just resolves = sequence resolvesOpts
@@ -116,7 +116,7 @@ spec = do
            it "loads properly" $ \db -> property $ \filler (DbPath arbDbPath) -> do
                    pendingWith "do proper copy "
                    (dbFillerRun filler) db
-                   (_, topBlock) <- Db.getLongestHead db
+                   (_, VerifiedBlock topBlock) <- Db.getLongestHead db
                    oldUnspent <- Set.toList <$> Db.unspentAt db (blockId topBlock)
                    -- prepare new dir
                    createDirectoryIfMissing False arbDbPath
@@ -130,7 +130,7 @@ spec = do
                    newDb <- Db.initDb arbDbPath
                    Db.loadDb newDb
                    fst <$> (Db.getLongestHead newDb)  `shouldReturn` (1 + dbFillerNumBlocks filler)
-                   (_, topBlock) <- Db.getLongestHead newDb                                        
+                   (_, VerifiedBlock topBlock) <- Db.getLongestHead newDb
                    newUnspent <- Set.toList <$> Db.unspentAt newDb (blockId topBlock)                       
                    oldUnspent `shouldBe` newUnspent
                    flushDb newDb

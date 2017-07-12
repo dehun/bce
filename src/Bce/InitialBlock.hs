@@ -4,6 +4,7 @@ import Bce.Hash
 import Bce.Crypto        
 import Bce.BlockChainHash
 import Bce.Difficulity
+import Bce.Verified    
 
 import GHC.Int (Int64)
 import GHC.IO.Unsafe
@@ -36,3 +37,5 @@ initialBlock = unsafePerformIO $ do
                               writeIORef initialBlockCache $ Just initialBlock_
                               return initialBlock_
 
+
+verifiedInitialBlock = VerifiedBlock initialBlock                                     
