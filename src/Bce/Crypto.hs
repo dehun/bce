@@ -6,6 +6,7 @@ module Bce.Crypto where
 
 import Bce.Hash
 import GHC.Generics        
+import Crypto.Random
 
 import qualified Data.ByteString.Char8 as BS    
 import qualified Data.ByteString.Base16 as B16
@@ -26,7 +27,6 @@ instance Read PubKey where
                        in if d == BS.empty
                           then []
                           else [(PubKey d, BS.unpack r)]                            
-
 
 instance Show PrivKey
     where show (PrivKey x) = BS.unpack $ B16.encode x
@@ -50,3 +50,12 @@ verifySignature :: Signature -> PubKey -> Hash -> Bool
 verifySignature s (PubKey p) (Hash h) =
     let Just pubKey = Ec.importPublic p
     in Ec.valid h pubKey (Ec.Sig s)
+
+generatePair :: CryptoRandomGen g => g -> Either GenError (KeyPair, g)
+generatePair g =
+    case Ec.generateKeyPair g of
+        Left e                  -> Left e
+        Right (ecPriv, ecPub, gNew)   ->
+                let priv = PrivKey (Ec.exportPrivate ecPriv)
+                    pub = PubKey (Ec.exportPublic ecPub)
+                in Right (KeyPair pub priv, gNew)
