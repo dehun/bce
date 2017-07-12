@@ -47,13 +47,9 @@ spec =  do
          blk <- Miner.findBlock db (keyPairPub keyPair) now
          r <- runEitherT $ Verification.verifyBlock db blk
          r `shouldSatisfy` isRight
-      it "passes findOneBlock" $ \db -> property $ \filler keyPair rnd -> do
+      it "passes findOneBlock" $ \db -> property $ \filler keyPair rnd maxHeads -> do
          (dbFillerRun filler) db
-         Just blocksFrom <- Db.getBlocksFrom db (blockId initialBlock)
-         let idx = (abs rnd) `mod` length blocksFrom
---         putStrLn $ "blocks are" ++ show (map (show . hash) blocksFrom)
-         let block = if blocksFrom == [] then initialBlock else blocksFrom !! idx
-         Just target <- Db.getNextDifficulityTo db (blockId block)
+         (target, block) <- arbitraryPointToBuild db maxHeads rnd
          cbtx <- Miner.coinbaseTransaction db (keyPairPub keyPair) Set.empty
          b <- findOneBlock now (Set.singleton cbtx) target (blockId block)
          r <- runEitherT $ Verification.verifyBlock db b
@@ -65,12 +61,9 @@ spec =  do
          b <- findOneBlock now (Set.singleton cbtx) target unexistingBlockId
          r <- runEitherT $ Verification.verifyBlock db b
          r `shouldSatisfy` isLeft
-      it "catches wrong transactions hash mismatch" $ \db -> property $ \filler keyPair rnd -> do
+      it "catches wrong transactions hash mismatch" $ \db -> property $ \filler keyPair maxHeads rnd -> do
          (dbFillerRun filler) db
-         Just blocksFrom <- Db.getBlocksFrom db (blockId initialBlock)
-         let idx = (abs rnd) `mod` length blocksFrom
-         let block = if blocksFrom == [] then initialBlock else blocksFrom !! idx                              
-         Just target <- Db.getNextDifficulityTo db (blockId block)
+         (target, block) <- arbitraryPointToBuild db maxHeads rnd
          cbtx <- Miner.coinbaseTransaction db (keyPairPub keyPair) Set.empty
          b <- findOneBlock now (Set.singleton cbtx) target (blockId block)
          unspent <- Db.unspentAt db (blockId block)
@@ -79,4 +72,22 @@ spec =  do
          r <- runEitherT $ Verification.verifyBlock db nb
          r `shouldSatisfy` isLeft
          r `shouldSatisfy` (\(Left m) -> "wrong stamped transactions hash" `isInfixOf` m)
-                                 
+      it "catches out of time block" $ \db -> property $ \filler keyPair rnd maxHeads -> do
+         (dbFillerRun filler) db
+         (target, block) <- arbitraryPointToBuild db maxHeads rnd 
+         cbtx <- Miner.coinbaseTransaction db (keyPairPub keyPair) Set.empty                              
+         t <- now 
+         b <- findOneBlock (return $ t - 10^5) (Set.singleton cbtx) target (blockId block)
+         r <- runEitherT $ Verification.verifyBlock db b
+         r `shouldSatisfy` isLeft
+         r `shouldSatisfy` (\(Left m) -> "block timestamp is incorrect" `isInfixOf` m)           
+      it "catches multiple coinbase transactions with different keys"
+             $ \db -> property $ \filler keyPair1 keyPair2 rnd maxHeads -> do
+         (dbFillerRun filler) db
+         (target, block) <- arbitraryPointToBuild db maxHeads rnd 
+         cbtx1 <- Miner.coinbaseTransaction db (keyPairPub keyPair1) Set.empty
+         cbtx2 <- Miner.coinbaseTransaction db (keyPairPub keyPair2) Set.empty
+         b <- findOneBlock now (Set.fromList [cbtx1, cbtx2]) target (blockId block)
+         r <- runEitherT $ Verification.verifyBlock db b
+         r `shouldSatisfy` isLeft
+         r `shouldSatisfy` (\(Left m) -> "more than one coinbase per block" `isInfixOf` m)

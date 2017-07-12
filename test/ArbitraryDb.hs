@@ -77,10 +77,21 @@ findOneBlock timer txs target prevBlockId = do
       Nothing -> findOneBlock timer txs target prevBlockId
       Just b -> return  b
 
+arbitraryPointToBuild :: Db.Db -> Int -> Int -> IO (Difficulity, Block)
+arbitraryPointToBuild db maxHeadsNum rnd = do
+  heads <- Db.getHeads db
+  let Just (arbHeadLength, arbHeadBlock) = randomPick heads rnd
+  let blocksBack = if length heads > maxHeadsNum then 1 else arbHeadLength
+  Just blocks <- Db.getBlocksTo db (blockId arbHeadBlock) blocksBack
+  let Just arbBlock = randomPick blocks rnd 
+  Just target <- Db.getNextDifficulityTo db (blockId arbBlock)
+  return (target, arbBlock)
+
+
 instance Arbitrary DbFiller where
     arbitrary = do
-      blocksNum <- choose (0, 24) :: Gen Int
-      maxHeadsNum <- choose (1, 4) :: Gen Int
+      blocksNum <- choose (0, 64) :: Gen Int
+      maxHeadsNum <- choose (1, 3) :: Gen Int
       keys <- mapM (\_ -> arbitrary) [1..blocksNum+1]
       let runFiller = (\db -> do
                            (actualBlocksNum, _) <- Db.getLongestHead db
@@ -88,18 +99,13 @@ instance Arbitrary DbFiller where
                            then do
                              return()
                            else do
-                             heads <- Db.getHeads db
                              rnd <- randomIO :: IO Int
-                             let (arbHeadLength, arbHeadBlock) = heads !! (rnd `mod` length heads)
-                             let blocksBack = if length heads > maxHeadsNum then 1 else arbHeadLength
-                             Just blocks <- Db.getBlocksTo db (blockId arbHeadBlock) blocksBack
-                             let arbBlock = blocks !! (rnd `mod` length blocks)
-                             let arbKey = keys !! (rnd `mod` length keys)
+                             (target, arbBlock) <- arbitraryPointToBuild db maxHeadsNum rnd
+                             let Just arbKey = randomPick keys rnd 
                              unspent <- Db.unspentAt db (blockId arbBlock)
                              utxs <- Set.fromList <$> generateArbitraryTxs db unspent keys
                              ctx <- Miner.coinbaseTransaction db (keyPairPub arbKey) utxs
                              let txs = Set.insert ctx utxs
-                             Just target <- Db.getNextDifficulityTo db $ blockId arbBlock
                              blk <- findOneBlock now txs target $ blockId arbBlock
                              r <- VerifiedDb.verifyAndPushBlock db blk
                              if not r then error "rejected block"

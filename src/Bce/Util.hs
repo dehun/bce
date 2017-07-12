@@ -44,3 +44,7 @@ liftMaybe = maybe mzero return
           
 at :: [a] -> Int -> Maybe a
 at xs idx = lookup idx (zip [0..] xs)
+
+randomPick :: [a] -> Int -> Maybe a
+randomPick [] _ = Nothing
+randomPick xs rnd = return $ xs !! (abs rnd `mod` length xs)
