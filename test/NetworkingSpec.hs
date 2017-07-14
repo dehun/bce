@@ -15,9 +15,6 @@ import Control.Concurrent
     
 import ArbitraryDb
 
-
-
-
 data WithArbitraryNetworks = WithArbitraryNetworks {
       runWithArbNetworks :: ([Networking.Network] -> IO () ) -> IO ()
     , networksCount :: Int
@@ -48,7 +45,8 @@ instance Arbitrary WithArbitraryNetworks where
                                           withArbitraryDb (\db -> do
                                               (dbFillerRun dbFiller) db
                                               net <- Networking.start config seeds db
-                                              fx net)))
+                                              fx net
+                                              Networking.stop net)))
                          ) networkIds
 --      :: [(Network -> IO ()) -> IO ()] -> (([Network] -> IO ()) -> IO ())
         let withNetworks = foldl (\acc w -> (\fx -> w (\n -> acc (\ns -> fx (n:ns)))))
@@ -56,6 +54,15 @@ instance Arbitrary WithArbitraryNetworks where
         let allKeys = foldl (\acc w -> Set.union acc (dbFillerKeys $  fst w)) Set.empty networkWithers
         return $ WithArbitraryNetworks withNetworks nNetworks allKeys
 
+
+waitCondition :: IO Bool -> IO ()
+waitCondition condition = do
+    c <- condition
+    if c then return ()
+    else do
+      threadDelay $ secondsToMicroseconds 1
+      waitCondition condition
+               
 
 spec :: Spec    
 spec = do
@@ -77,7 +84,9 @@ spec = do
                putStrLn $ show dbLengths                            
                let longest = maximum dbLengths
                putStrLn $ "longest is " ++ show longest
-               threadDelay $ secondsToMicroseconds 10 -- wait for sync to complete
+               waitCondition $ do
+                            ls <- getDbLengths
+                            return $ longest == minimum ls
                newDbLengths <- getDbLengths
                putStrLn "final db lengths are: "
                putStrLn $ show newDbLengths

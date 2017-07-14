@@ -259,20 +259,21 @@ serverMainLoop sock p2p =
     (\ex -> do
          let e = ex :: Exception.SomeException
          -- TODO: kill all peers
+         logWarning "killing all peers"
          toKill <- atomically $ readTVar $ p2pConnectedPeers p2p
          mapM (\p -> killPeer p p2p) $ Set.toList toKill
          Sock.close sock)
 
 
 
-startServerListener :: P2pConfig -> P2pState -> IO ()
+startServerListener :: P2pConfig -> P2pState -> IO ThreadId
 startServerListener config p2p  = do                       
   sock <- Sock.socket Sock.AF_INET Sock.Stream 0
   Sock.setSocketOption sock Sock.ReuseAddr 1
   Sock.bind sock (Sock.SockAddrInet (fromIntegral $ peerPort $ p2pConfigBindAddress config) Sock.iNADDR_ANY)
   Sock.listen sock 2
-  forkIO $ serverMainLoop sock p2p
-  return ()
+  pid <- forkIO $ serverMainLoop sock p2p
+  return pid
 
 peerAddressToSockAddr :: PeerAddress -> Sock.SockAddr
 peerAddressToSockAddr (PeerAddress host port) =
@@ -354,7 +355,7 @@ start seeds config = do
   p2pState <- P2pState config <$> newTVarIO (Set.fromList seeds) <*> newTVarIO Set.empty
          <*> newTVarIO Set.empty <*> newTChanIO <*> newTChanIO
                  <*> newTVarIO Map.empty <*> newTVarIO Map.empty
-  p2pServerListenerThread <- forkIO $ startServerListener config p2pState
+  p2pServerListenerThread <- startServerListener config p2pState
   p2pReconnectorThread <- forkIO $ reconnectorLoop p2pState
   p2pAnnouncherLoop <- forkIO $ announcerLoop p2pState
   return P2p{..}
@@ -365,6 +366,7 @@ stop p2p = do
     killThread $ p2pServerListenerThread p2p
     killThread $ p2pReconnectorThread p2p
     killThread $ p2pAnnouncherLoop p2p
+    
 
 broadcast :: P2p -> P2pMessage -> IO ()
 broadcast p2p msg = ibroadcast (p2pState p2p) msg
