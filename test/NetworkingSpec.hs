@@ -10,8 +10,11 @@ import Test.Hspec
 import Test.QuickCheck    
 import Test.QuickCheck.Arbitrary
 import Data.List
+import Data.Maybe    
 import qualified Data.Set as Set
-import Control.Concurrent    
+import Control.Concurrent
+import System.IO.Unsafe
+import Data.IORef    
     
 import ArbitraryDb
 
@@ -26,10 +29,13 @@ instance Show WithArbitraryNetworks where
 instance Arbitrary WithArbitraryNetworks where
     arbitrary = do
         nNetworks <- choose (2, 8)
-        startPort <- choose (16000, 56000)
-        let nidToPeerAddress nid = P2p.PeerAddress ("(127,0,0," ++ show nid ++ ")")
-                                                   (fromIntegral $ startPort + nid)
         let networkIds = [1..nNetworks]
+        portRangeStart <- choose (16000, 32000)
+        portRangeEnd <- choose (46000, 56000)
+        freePorts <- mapM (\_ -> choose (portRangeStart, portRangeEnd) :: Gen Int) networkIds
+        let ports = zip networkIds freePorts
+        let nidToPeerAddress nid = P2p.PeerAddress ("(127,0,0," ++ show (10+nid) ++ ")")
+                                                   (fromIntegral $ fromJust $ lookup nid ports)
         -- minimal spanning tree for fully connected graph is shuffled list of vertexes paired
         shuffled <-  shuffle networkIds
         let mst = (last shuffled, head shuffled) : zip (init shuffled) (tail shuffled) 
@@ -44,6 +50,7 @@ instance Arbitrary WithArbitraryNetworks where
                               return (dbFiller, (\fx ->
                                           withArbitraryDb (\db -> do
                                               (dbFillerRun dbFiller) db
+                                              putStrLn $ "starting network on " ++ show peerAddress 
                                               net <- Networking.start config seeds db
                                               fx net
                                               Networking.stop net)))
@@ -55,17 +62,22 @@ instance Arbitrary WithArbitraryNetworks where
         return $ WithArbitraryNetworks withNetworks nNetworks allKeys
 
 
-waitCondition :: IO Bool -> IO ()
-waitCondition condition = do
-    c <- condition
-    if c then return ()
-    else do
-      threadDelay $ secondsToMicroseconds 1
-      waitCondition condition
+waitCondition :: Int -> IO Bool -> IO ()
+waitCondition timeout condition  =
+    continue 0
+    where continue alreadyPassed
+              | alreadyPassed > timeout = return ()
+              | otherwise = do
+            c <- condition
+            if c then return ()
+            else do
+              let delay = 1
+              threadDelay $ secondsToMicroseconds delay
+              continue $ alreadyPassed + delay
                
 
 spec :: Spec    
-spec = do
+spec = parallel $ do
   describe "Networking" $ do
     -- it "networking sync transactions" $ property $ \withNetworks -> do
     --     (runWithArbNetworks withNetworks) $ \nets -> do
@@ -84,7 +96,7 @@ spec = do
                putStrLn $ show dbLengths                            
                let longest = maximum dbLengths
                putStrLn $ "longest is " ++ show longest
-               waitCondition $ do
+               waitCondition 25 $ do
                             ls <- getDbLengths
                             return $ longest == minimum ls
                newDbLengths <- getDbLengths

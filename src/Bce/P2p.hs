@@ -270,7 +270,8 @@ startServerListener :: P2pConfig -> P2pState -> IO ThreadId
 startServerListener config p2p  = do                       
   sock <- Sock.socket Sock.AF_INET Sock.Stream 0
   Sock.setSocketOption sock Sock.ReuseAddr 1
-  Sock.bind sock (Sock.SockAddrInet (fromIntegral $ peerPort $ p2pConfigBindAddress config) Sock.iNADDR_ANY)
+  Sock.bind sock (Sock.SockAddrInet (fromIntegral $ peerPort $ p2pConfigBindAddress config)
+                      (Sock.tupleToHostAddress (read $ peerIp $ p2pConfigBindAddress config)))
   Sock.listen sock 2
   pid <- forkIO $ serverMainLoop sock p2p
   return pid
