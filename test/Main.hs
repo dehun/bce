@@ -6,4 +6,4 @@ import Test.Hspec.Formatters
 import qualified Spec
 
 main :: IO ()
-main = hspecWith defaultConfig $ parallel Spec.spec
+main = hspecWith defaultConfig $ Spec.spec
