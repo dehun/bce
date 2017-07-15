@@ -1,9 +1,13 @@
 module NetworkingSpec where
     
 import qualified Bce.Networking as Networking
+import qualified Bce.VerifiedDb as VerifiedDb
 import qualified Bce.P2p as P2p
 import qualified Bce.DbFs as Db
 import Bce.Crypto
+import Bce.Verified
+import Bce.BlockChainHash
+import Bce.BlockChain    
 import Bce.Util    
 
 import Test.Hspec    
@@ -13,8 +17,8 @@ import Data.List
 import Data.Maybe    
 import qualified Data.Set as Set
 import Control.Concurrent
-import System.IO.Unsafe
-import Data.IORef    
+import Control.Monad.Extra    
+import Data.Ord
     
 import ArbitraryDb
 
@@ -79,11 +83,25 @@ waitCondition timeout condition  =
 spec :: Spec    
 spec = parallel $ do
   describe "Networking" $ do
-    -- it "networking sync transactions" $ property $ \withNetworks -> do
-    --     (runWithArbNetworks withNetworks) $ \nets -> do
-    --         nidx <- generate $ choose (0, (length nets) - 1)
-    --         let arbNet = nets !! nidx
-    --         return ()
+    it "networking sync transactions" $ property $ \withNetworks -> do
+        (runWithArbNetworks withNetworks) $ \nets -> do
+            let dbs = map Networking.networkDb nets
+            let getDbLengths = mapM (\db -> do
+                                       (l, _) <- Db.getLongestHead db
+                                       return (db, l)) dbs                      
+            dbLengths <- getDbLengths
+            let (maxDb, longest) = maximumBy (comparing snd) dbLengths
+            (_, VerifiedBlock topBlock) <- Db.getLongestHead maxDb
+            unspent <- Db.unspentAt maxDb $ blockId topBlock
+            Just (tx, _) <- generateArbitraryTx maxDb unspent $ Set.toList $ keyPairs withNetworks
+            VerifiedDb.verifyAndPushTransactions maxDb $ Set.singleton tx
+            Db.getTransactions maxDb `shouldReturn` Set.singleton tx
+            waitCondition 25 $ do             -- wait for blockchains to sync
+                            ls <- map snd <$> getDbLengths
+                            return $ longest == minimum ls
+            let condition = all (==[tx]) <$> mapM (\db -> Set.toList <$> Db.getTransactions db) dbs
+            waitCondition 10 condition             -- wait for transactions to sync
+            condition `shouldReturn` True
             
     it "networking sync blocks" $ property $ \withNetworks -> do
         (runWithArbNetworks withNetworks) $ \nets -> do
