@@ -21,20 +21,21 @@ import qualified Data.Set as Set
 import qualified Data.ByteString as BS
 import Data.ByteString.Arbitrary
 import Control.Monad
-import System.Random    
+import System.Random
+import Crypto.Random.DRBG
+import System.IO.Unsafe
 
 data DbFiller = DbFiller { dbFillerRun :: Db.Db -> IO ()
                          , dbFillerNumBlocks :: Int}
 instance Show DbFiller where
     show f = "DbFiller with N=" ++ show (dbFillerNumBlocks f)
 
-instance Arbitrary PubKey where
-    arbitrary = PubKey <$> fastRandBs 16
-instance Arbitrary PrivKey where
-    arbitrary = PrivKey <$> fastRandBs 16
-
 instance Arbitrary KeyPair where
-    arbitrary = KeyPair <$> arbitrary <*> arbitrary
+    arbitrary = do
+        let g = unsafePerformIO newGenIO :: CtrDRBG
+        case generatePair g of
+            Left e                  -> error "Arbitrary KeyPair failed"
+            Right (keyPair, gNew)   -> return keyPair
 
 generateArbitraryTx :: Db.Db -> Set.Set TxOutputRef -> [KeyPair] -> IO (Maybe (Transaction, Set.Set TxOutputRef))
 generateArbitraryTx db unspent keys

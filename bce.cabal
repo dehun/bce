@@ -41,6 +41,7 @@ library
                  , word8
                  , ed25519-donna
                  , crypto-api
+                 , DRBG
                  
     exposed-modules: Bce.BlockChain
                    , Bce.Hash
@@ -97,7 +98,8 @@ executable bcedaemon
                          time,
                          transformers,
                          word8,
-                         crypto-api
+                         crypto-api,
+                         DRBG
 
     hs-source-dirs: src/BceDaemon
     default-language:    Haskell2010
@@ -133,6 +135,7 @@ Test-Suite test-hunit-example
                   , transformers
                   , word8
                   , crypto-api
+                  , DRBG
 
     default-language:    Haskell2010                  
                          

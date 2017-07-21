@@ -11,12 +11,13 @@ import qualified Bce.Miner as Miner
 
 import qualified Bce.DbFs as Db     
 import Bce.InitialBlock
-    
-    
+
 import Control.Monad
 import Control.Concurrent
 import System.Environment
 import qualified Data.ByteString as BS    
+
+import Crypto.Random.DRBG
 
 -- ./dist/build/bce/bcedaemon "(127,0,0,1)" 3555 "(127,0,0,1)" 3777 8080
 main :: IO ()
@@ -35,7 +36,13 @@ main = do
   logInfo $ "starting http on port " ++ show restApiPort
   Rest.start db (read restApiPort)
   logInfo $ "starting mining"
-  let ownerKey = PubKey $ BS.pack [0xde, 0xad]
+
+  g <- newGenIO :: IO CtrDRBG
+
+  let Right (keyPair, gNew) = generatePair g
+
+  let ownerKey = keyPairPub keyPair
+
   Miner.mineForever db ownerKey networkTimer
 
   

@@ -54,8 +54,8 @@ verifySignature s (PubKey p) (Hash h) =
 generatePair :: CryptoRandomGen g => g -> Either GenError (KeyPair, g)
 generatePair g =
     case Ec.generateKeyPair g of
-        Left e                  -> Left e
-        Right (ecPriv, ecPub, gNew)   ->
+        Left e                      -> Left e
+        Right (ecPriv, ecPub, gNew) ->
                 let priv = PrivKey (Ec.exportPrivate ecPriv)
                     pub = PubKey (Ec.exportPublic ecPub)
                 in Right (KeyPair pub priv, gNew)
