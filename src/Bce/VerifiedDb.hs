@@ -7,6 +7,8 @@ import qualified Bce.DbFs as Db
     
 
 import Data.Either
+import Data.List
+import Data.Maybe    
 import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Trans.Either
@@ -30,9 +32,21 @@ verifyAndPushBlock db block =
 
 
 verifyAndPushTransactions :: Db.Db -> Set.Set Transaction -> IO (Either String ())
-verifyAndPushTransactions db txs = Db.transactionally db $ runEitherT $ do
-  vtxs <- mapM (verifyTransactionTransaction db) $ Set.toList txs
-  liftIO $ Db.pushTransactions db $ Set.fromList vtxs
+verifyAndPushTransactions db txs = Db.transactionally db $ do
+  let txIns = concatMap (Set.toList . txInputs) txs
+  alreadyInMem <- Set.toList <$> Db.getTransactions db
+  let isAlreadyUsed = find (\t -> case t of
+                                    CoinbaseTransaction _ -> False
+                                    Transaction ins outs sig ->
+                                     any (\inp -> Set.member inp ins) txIns
+                           ) alreadyInMem
+  if isJust isAlreadyUsed
+  then return $ Left "transaction clashes with already in-memory transactions "
+  else do
+     runEitherT $ do
+              vtxs <- mapM (verifyTransactionTransaction db) $ Set.toList txs
+              liftIO $ Db.pushTransactions db $ Set.fromList vtxs
+              right ()
 
 
                

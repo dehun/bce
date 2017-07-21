@@ -22,11 +22,12 @@
 *** TODO fix Networking sync
 ** DONE cover shit with unit tests
 ** DONE fix weird race condition in "pass findOneBlock"
-** TODO test forks
+** DONE test forks
+** TODO use network time in verification! security issue!
+** TODO verify against transactions currently in the list
 ** TODO implement transactions signature
 ** TODO limit fork depth
 ** TODO debug transactions
-** TODO use network time in verification! security issue!
 ** TODO command line args parsing
 ** TODO persistent storage for p2p peers
 ** TODO dead head pruning
