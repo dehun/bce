@@ -4,6 +4,7 @@
 module Rest where
 
 import Bce.BlockChain
+import Bce.Verified    
 import qualified Bce.DbFs as Db
 import qualified Bce.VerifiedDb as VerifiedDb    
 import Bce.Util
@@ -59,7 +60,7 @@ getBlock = do
           let blockId = read blockIdStr :: Hash
           blockOpt <- liftIO $ Db.getBlock db blockId
           case blockOpt of
-            Just block -> json block
+            Just (VerifiedBlock block) -> json block
             Nothing -> json $ RespondError "no such block"
 
 getTransaction = do

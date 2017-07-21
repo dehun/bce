@@ -5,7 +5,8 @@ module Bce.BlockChainVerification
     where
 
 import Bce.BlockChain
-import Bce.InitialBlock    
+import Bce.InitialBlock
+import Bce.Verified    
 import Bce.Hash
 import Bce.BlockChainHash
 import Bce.BlockChainSerialization    
@@ -22,6 +23,7 @@ import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Trans.Either
 import Control.Monad.Trans.Maybe
+import Data.List    
 import qualified Data.Set as Set    
 
 
@@ -35,8 +37,10 @@ verifyPrevBlockHashCorrect db block
 
 verifyBlockDifficulity db block = do
   let prevHash = (bhPrevBlockHeaderHash $ blockHeader block)
-  prevBlocks <- liftIO $ Db.getBlocksTo db prevHash difficulityRecalculationBlocks
-  let expectedDifficulity = nextDifficulity prevBlocks
+  prevBlocksOpt <- liftIO $ Db.getBlocksTo db prevHash difficulityRecalculationBlocks
+  guard (isJust prevBlocksOpt) `mplus` left "can not get blocks to"
+  let prevBlocks = fromJust prevBlocksOpt
+  let expectedDifficulity = nextDifficulity $ map verifiedBlock prevBlocks
   let actualDifficulity = blockDifficulity block
   let stampedDifficulity = fromIntegral $ bhDifficulity $ blockHeader block
   guard (stampedDifficulity == expectedDifficulity) `mplus` left "wrong stamped difficulity"
@@ -46,11 +50,12 @@ verifyBlockDifficulity db block = do
 blocksForTimeAveraging = 10                         
 verifyBlockTimestamp db block = do
   let blockTimestamp  = bhWallClockTime . blockHeader
-  lastBlocks <- liftIO $ Db.getBlocksTo db (hash block) blocksForTimeAveraging
-  case lastBlocks of
-    [] -> return ()
-    _ -> do
-      let avgTime = median $ map blockTimestamp lastBlocks
+  lastBlocksOpt <- liftIO $ Db.getBlocksTo db (bhPrevBlockHeaderHash $ blockHeader block) blocksForTimeAveraging
+  case lastBlocksOpt of
+    Nothing -> left $ "can not get blocks to " ++ show (blockId block)
+    Just [] -> return ()
+    Just lastBlocks -> do
+      let avgTime = median $ map blockTimestamp $ map verifiedBlock lastBlocks
       guard (blockTimestamp block >= avgTime) `mplus` left "block timestamp is incorrect, less than last avg"
 
 
@@ -74,6 +79,7 @@ verifyTransactionTransaction db tx@(Transaction inputs outputs sig) = do
   guard (length inputs > 0) `mplus` left "there are should be at least one transaction input"
   guard (length outputs > 0) `mplus` left "there are should be at least one transaction output"
   verifyTransactionSignature db tx
+  return $ VerifiedTransaction tx
 verifyTransactionTransaction db _ = left "coinbase transaction is not allowed"
 
 
@@ -88,7 +94,9 @@ verifyTransaction db block tx =
             guard (isJust expectedCoinbaseReward) `mplus` left "can not calculate or wrong coinbase reward"
             guard ((outputAmount $ head $ Set.toList $ outputs) == fromJust expectedCoinbaseReward)
                       `mplus` left "coinbase reward is incorrectly stamped"
-    Transaction inputs outputs sig -> verifyTransactionTransaction db tx
+    Transaction inputs outputs sig -> do
+        verifyTransactionTransaction db tx
+        return ()
 
 
 verifyBlockTransactions db block = do
@@ -111,12 +119,13 @@ verifyBlockDoesNoDoHashCollision db block = do
   guard (not alreadyExists) `mplus` left "block already exists, or block id collides"
 
 
-verifyBlock :: Db.Db -> Block -> EitherT String IO [()]
+verifyBlock :: Db.Db -> Block -> EitherT String IO VerifiedBlock
 verifyBlock db block
-    | block == initialBlock = return [()] -- initial block is valid, even though it does not have prev block
+    | block == initialBlock = return verifiedInitialBlock -- initial block is valid, even though it does not have prev block
     | otherwise = do
     sequence [ verifyPrevBlockHashCorrect db block
              , verifyBlockDifficulity db block
              , verifyBlockTimestamp db block
              , verifyBlockTransactions db block] `mplus` (left $ "; in block" ++ (show $ hash block))
+    return $ VerifiedBlock block
     

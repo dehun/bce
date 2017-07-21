@@ -14,7 +14,7 @@ cabal-version:       >=1.10
 
 library
     hs-source-dirs: src
-    ghc-options: -g
+    ghc-options: -threaded
     build-depends: QuickCheck >= 2.8.2
                  , Spock >= 0.12.0.0
                  , aeson >= 0.11.2.1
@@ -29,6 +29,7 @@ library
                  , data-default
                  , directory
                  , either
+                 , extra
                  , hspec >= 2.2.4
                  , leveldb-haskell
                  , mtl
@@ -56,18 +57,18 @@ library
                    , Bce.Miner
                    , Bce.TimeStamp
                    , Bce.DbFs
+                   , Bce.Verified                   
                    , Bce.VerifiedDb
                    , Bce.BlockChainVerification                   
                    , Bce.Logger
                    , Bce.Cache
 
 
-
     default-language:    Haskell2010    
                                          
 
 executable bcedaemon
-    ghc-options: -g
+    ghc-options: -threaded    
     main-is:             Main.hs
   -- other-modules:       
   -- other-extensions:    
@@ -87,6 +88,7 @@ executable bcedaemon
                          data-default,
                          directory,
                          either,
+                         extra,
                          hspec >= 2.2.4,
                          leveldb-haskell,
                          mtl,
@@ -105,10 +107,11 @@ executable bcedaemon
     default-language:    Haskell2010
 
 
-Test-Suite test-hunit-example
+Test-Suite test
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     Main-is:          Main.hs
+    ghc-options: -threaded 
     Build-Depends:  QuickCheck >= 2.8.2
                   , Spock >= 0.12.0.0
                   , aeson >= 0.11.2.1
@@ -123,6 +126,7 @@ Test-Suite test-hunit-example
                   , data-default
                   , directory
                   , either
+                  , extra
                   , hspec
                   , hspec >= 2.2.4
                   , leveldb-haskell

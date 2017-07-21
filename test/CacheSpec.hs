@@ -23,7 +23,7 @@ instance (Ord a, Arbitrary a, Arbitrary b) => Arbitrary (BigList (a, b)) where
                                              , length ys == (Set.size $ Set.fromList (map fst ys))])      
       return $ BigList xs
 
-spec = do
+spec = parallel $ do
   describe "cache" $ do
          it "is empty at first" $ do
               cache <- createCache 10 now :: IO (Cache Int Int)

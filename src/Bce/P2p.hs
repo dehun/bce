@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DeriveGeneric #-}
 
 module Bce.P2p where
@@ -45,17 +46,24 @@ data PeerAddress = PeerAddress {
       } deriving (Show, Eq, Generic, Ord)
 instance Binary PeerAddress
 
-data P2p = P2p {
+data P2pState = P2pState {
       p2pConfig :: P2pConfig
     , p2pPeers :: TVar (Set.Set PeerAddress)
     , p2pConnectedPeers :: TVar (Set.Set PeerAddress)
     , p2pConnectingPeers :: TVar (Set.Set PeerAddress)                           
-    , p2pRecvChan :: TChan PeerEvent
+    , p2psRecvChan :: TChan PeerEvent
     , p2pSendChan :: TChan PeerSend
     , p2pPeerTimes :: TVar (Map.Map PeerAddress TimeStamp)
     , p2pPeerThreads :: TVar (Map.Map PeerAddress [ThreadId])
-      } 
+      }
 
+p2pRecvChan p2ps = p2psRecvChan $ p2pState p2ps
+
+
+data P2p = P2p { p2pState :: P2pState
+               , p2pServerListenerThread :: ThreadId
+               , p2pReconnectorThread :: ThreadId
+               , p2pAnnouncherLoop :: ThreadId} 
 
 data P2pMessage =
                 P2pMessageHello PeerAddress
@@ -121,7 +129,7 @@ pollMessagesFromClientBufer s' =
             Nothing -> return $ reverse msgs
     in continue s' []
 
-handlePeerMessage :: Sock.Socket -> P2p -> P2pMessage -> State.StateT P2pClientState IO ()
+handlePeerMessage :: Sock.Socket -> P2pState -> P2pMessage -> State.StateT P2pClientState IO ()
 handlePeerMessage sock p2p msg = do
   liftIO $ logTrace $ "p2p got msg " ++ show msg
   case msg of
@@ -150,7 +158,7 @@ handlePeerMessage sock p2p msg = do
     P2pMessagePayload userMsg -> do
              -- TODO: check do we have bloody peer
              peer <- fromJust <$> clientStatePeer <$> State.get
-             liftIO $ atomically $ writeTChan (p2pRecvChan p2p)
+             liftIO $ atomically $ writeTChan (p2psRecvChan p2p)
                                  (PeerMessage peer userMsg)
 
     P2pMessageTellTime time -> do
@@ -162,7 +170,7 @@ handlePeerMessage sock p2p msg = do
         return ()
         
 
-clientRecvLoop :: Sock.Socket -> Sock.SockAddr -> P2p -> State.StateT P2pClientState IO ()
+clientRecvLoop :: Sock.Socket -> Sock.SockAddr -> P2pState -> State.StateT P2pClientState IO ()
 clientRecvLoop sock addr p2p =
     do
       olds <- State.get      
@@ -173,17 +181,19 @@ clientRecvLoop sock addr p2p =
           forM_ msgs (\m -> handlePeerMessage sock p2p m)
           clientRecvLoop sock addr p2p
       else do
+        liftIO $ logWarning $ "recv loop error"
         peer <- clientStatePeer <$> State.get
         case peer of
           Just peerAddress -> do
               liftIO $ (killPeer peerAddress p2p)
               liftIO $ atomically $ do
-                    writeTChan (p2pRecvChan p2p) (PeerDisconnected peerAddress)
+                    writeTChan (p2psRecvChan p2p) (PeerDisconnected peerAddress)
           Nothing -> pure ()
         return ()
 
-killPeer :: PeerAddress -> P2p -> IO Bool
+killPeer :: PeerAddress -> P2pState -> IO Bool
 killPeer peer p2p = do
+    logWarning $ "killing peer" ++ show peer
     atomically $ do
       oldConnectedPeers <- readTVar $ p2pConnectedPeers p2p
       writeTVar (p2pConnectedPeers p2p) $ Set.delete peer oldConnectedPeers
@@ -196,38 +206,46 @@ killPeer peer p2p = do
                        mapM_ killThread threads
                        return True
 
-clientSendLoop :: Sock.Socket -> PeerAddress -> P2p -> IO ()
+clientSendLoop :: Sock.Socket -> PeerAddress -> P2pState -> IO ()
 clientSendLoop sock peerAddr p2p = do
-  Exception.catch
-               (do
-                   chan <- atomically $ dupTChan $ p2pSendChan p2p
-                   snd <- atomically $ readTChan chan
-                   let encodedMsg = encodeMsg $ sendMsg snd
-                   case sendDestination snd of
-                     Nothing -> SBS.send sock encodedMsg
-                     Just dst -> if dst == peerAddr
-                                 then SBS.send sock encodedMsg
-                                 else return 0
-                   clientSendLoop sock peerAddr p2p)
+  chan <- atomically $ dupTChan $ p2pSendChan p2p
+  let loop = do
+        snd <- atomically $ readTChan chan
+        let encodedMsg = encodeMsg $ sendMsg snd
+        case sendDestination snd of
+          Nothing -> do
+               logDebug $ "broadcast towards " ++ show peerAddr
+                           ++ " of size=" ++ show (BS.length encodedMsg)
+               SBS.send sock encodedMsg
+          Just dst -> if dst == peerAddr
+                      then do
+                        logDebug $ "sending towards " ++ show peerAddr
+                                    ++ " of size=" ++ show (BS.length encodedMsg)
+                        SBS.send sock encodedMsg
+                      else do
+                        logDebug $ "ignoring send towards " ++ show dst
+                        return 0
+  Exception.catch (forever loop)
                (\e -> do
                   Sock.close sock
-                  logInfo $ "killing peer connection at addr" ++ (show peerAddr)
+                  logDebug $ "killing peer connection at addr" ++ (show peerAddr)
                                ++ "catched" ++ show (e :: Exception.IOException)
                   killPeer peerAddr p2p
                   return ()
                   )
                     
-handlePeer :: Sock.Socket -> Sock.SockAddr -> P2p -> IO ()
+handlePeer :: Sock.Socket -> Sock.SockAddr -> P2pState -> IO ()
 handlePeer sock addr p2p = do
-  logInfo $ "got peer from addr"  ++ show addr
+  logDebug $ "got peer from addr"  ++ show addr
   recvThread <- forkIO $ do
     State.evalStateT (clientRecvLoop sock addr p2p)
              (P2pClientState (BinGet.runGetIncremental msgDecoder) Nothing)
   return ()
 
-serverMainLoop :: Sock.Socket -> P2p -> IO ()
+serverMainLoop :: Sock.Socket -> P2pState -> IO ()
 serverMainLoop sock p2p =
-    forever $ do
+  Exception.catch 
+    (forever $ do
       (conn, addr) <- Sock.accept sock
       connected <- length <$> (atomically $ readTVar $ p2pConnectedPeers p2p)
       if connected <p2pConfigPeersConnectedLimit (p2pConfig p2p) 
@@ -235,27 +253,35 @@ serverMainLoop sock p2p =
               handlePeer conn addr p2p
               return ()
       else do
-        logInfo "dropping the connection as we already at top of connecte peers"
+        logDebug "dropping the connection as we already at top of connecte peers"
         Sock.close conn
-        return ()
+        return ())
+    (\ex -> do
+         let e = ex :: Exception.SomeException
+         -- TODO: kill all peers
+         logWarning "killing all peers"
+         toKill <- atomically $ readTVar $ p2pConnectedPeers p2p
+         mapM (\p -> killPeer p p2p) $ Set.toList toKill
+         Sock.close sock)
 
 
 
-startServerListener :: P2pConfig -> P2p -> IO ()
+startServerListener :: P2pConfig -> P2pState -> IO ThreadId
 startServerListener config p2p  = do                       
   sock <- Sock.socket Sock.AF_INET Sock.Stream 0
   Sock.setSocketOption sock Sock.ReuseAddr 1
-  Sock.bind sock (Sock.SockAddrInet (fromIntegral $ peerPort $ p2pConfigBindAddress config) Sock.iNADDR_ANY)
+  Sock.bind sock (Sock.SockAddrInet (fromIntegral $ peerPort $ p2pConfigBindAddress config)
+                      (Sock.tupleToHostAddress (read $ peerIp $ p2pConfigBindAddress config)))
   Sock.listen sock 2
-  forkIO $ serverMainLoop sock p2p
-  return ()
+  pid <- forkIO $ serverMainLoop sock p2p
+  return pid
 
 peerAddressToSockAddr :: PeerAddress -> Sock.SockAddr
 peerAddressToSockAddr (PeerAddress host port) =
     Sock.SockAddrInet (fromIntegral port) readedHost
         where readedHost = Sock.tupleToHostAddress $ read host
 
-reconnectPeer :: P2p -> PeerAddress -> IO ()
+reconnectPeer :: P2pState -> PeerAddress -> IO ()
 reconnectPeer p2p peerAddress = do
       logDebug $ "reconnecting peer" ++ show peerAddress
       proceed <- atomically $ do
@@ -281,7 +307,7 @@ reconnectPeer p2p peerAddress = do
                          do
                            Sock.connect sock $ peerAddressToSockAddr peerAddress
                            SBS.send sock $ encodeMsg $ P2pMessageHello $ p2pConfigBindAddress $ p2pConfig p2p
-                           logInfo $ "connected to " ++ show peerAddress
+                           logDebug $ "connected to " ++ show peerAddress
         case success of
           Right _ -> do
 
@@ -297,50 +323,66 @@ reconnectPeer p2p peerAddress = do
                           ++ "; err: " ++ show (err::Exception.IOException)
              atomically removeFromConnecting
 
-reconnectorLoop :: P2p -> IO ()
+reconnectorLoop :: P2pState -> IO ()
 reconnectorLoop p2p = do
     threadDelay (secondsToMicroseconds $ p2pConfigReconnectTimeout $ p2pConfig p2p)
     toConnect <- atomically $ do
                         all <- readTVar $ p2pPeers p2p
                         connected <- readTVar $ p2pConnectedPeers p2p
                         if length connected < p2pConfigPeersConnectedLimit (p2pConfig p2p)
-                        then return $ (Set.\\) all connected
+                        then return $ (Set.delete (p2pConfigBindAddress $ p2pConfig p2p)$ (Set.\\) all connected)
                         else return Set.empty
     forM_ toConnect (\p -> forkIO $ reconnectPeer p2p p)
     reconnectorLoop p2p
 
-announcerLoop :: P2p -> IO ()
+announcerLoop :: P2pState -> IO ()
 announcerLoop p2p = do
   threadDelay (secondsToMicroseconds $ p2pConfigAnnounceTimeout $ p2pConfig p2p)
   (peersToAnnounce, toPeers) <- atomically $ do
                                   (,) <$> (readTVar $ p2pPeers p2p)
                                           <*> (readTVar $ p2pConnectedPeers p2p)
-  broadcast p2p $ P2pMessageAnounce peersToAnnounce
+  ibroadcast p2p $ P2pMessageAnounce peersToAnnounce
   announcerLoop p2p
 
-timerLoop :: P2p -> IO ()
+timerLoop :: P2pState -> IO ()
 timerLoop p2p = do
   threadDelay (secondsToMicroseconds $ p2pConfigTimerTimeout $ p2pConfig p2p)
-  broadcast p2p <$> P2pMessageTellTime <$> now
+  ibroadcast p2p <$> P2pMessageTellTime <$> now
   timerLoop p2p
+
 
 start :: [PeerAddress] -> P2pConfig -> IO P2p
 start seeds config = do
-  p2p <- P2p config <$> newTVarIO (Set.fromList seeds) <*> newTVarIO Set.empty
+  p2pState <- P2pState config <$> newTVarIO (Set.fromList seeds) <*> newTVarIO Set.empty
          <*> newTVarIO Set.empty <*> newTChanIO <*> newTChanIO
                  <*> newTVarIO Map.empty <*> newTVarIO Map.empty
-  forkIO $ startServerListener config p2p
-  forkIO $ reconnectorLoop p2p
-  forkIO $ announcerLoop p2p
-  return p2p
+  p2pServerListenerThread <- startServerListener config p2pState
+  p2pReconnectorThread <- forkIO $ reconnectorLoop p2pState
+  p2pAnnouncherLoop <- forkIO $ announcerLoop p2pState
+  return P2p{..}
+
+
+stop :: P2p -> IO ()
+stop p2p = do
+    killThread $ p2pServerListenerThread p2p
+    killThread $ p2pReconnectorThread p2p
+    killThread $ p2pAnnouncherLoop p2p
+    
 
 broadcast :: P2p -> P2pMessage -> IO ()
-broadcast p2p msg = do
-    atomically $ writeTChan (p2pSendChan p2p) (PeerSend msg Nothing)
+broadcast p2p msg = ibroadcast (p2pState p2p) msg
 
 send :: P2p -> PeerAddress -> P2pMessage -> IO ()
-send p2p peer msg =
-        atomically $ writeTChan (p2pSendChan p2p) (PeerSend msg $ Just peer)
+send p2p peer msg = isend (p2pState p2p) peer msg
+
+ibroadcast :: P2pState -> P2pMessage -> IO ()
+ibroadcast p2p msg = do
+    atomically $ writeTChan (p2pSendChan p2p) (PeerSend msg Nothing)
+
+isend :: P2pState -> PeerAddress -> P2pMessage -> IO ()
+isend p2p peer msg = do
+    logDebug $ "p2p queuing send towards peer="  ++ show peer
+    atomically $ writeTChan (p2pSendChan p2p) (PeerSend msg $ Just peer)
 
 broadcastPayload :: P2p -> BS.ByteString -> IO ()
 broadcastPayload p2p payload = broadcast p2p $ P2pMessagePayload payload
@@ -350,6 +392,6 @@ sendPayload p2p peer payload = send p2p peer $ P2pMessagePayload payload
 
 networkTime :: P2p -> IO TimeStamp
 networkTime p2p = do
-    times <- atomically $ readTVar $ p2pPeerTimes p2p
+    times <- atomically $ readTVar $ p2pPeerTimes $ p2pState p2p
     ourTime <- now
     return $ median (ourTime: Map.elems times)

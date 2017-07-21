@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Bce.Networking where
 
@@ -6,7 +7,8 @@ import qualified Bce.BlockChain as BlockChain
 import qualified Bce.DbFs as Db
 import qualified Bce.VerifiedDb as VerifiedDb
 import qualified Bce.P2p as P2p
-import Bce.Logger    
+import Bce.Logger
+import Bce.Verified    
 import Bce.Hash
 import Bce.BlockChainHash
 import Bce.Util
@@ -33,8 +35,12 @@ import Control.Monad.Trans.State
 
 type PeerAddress = P2p.PeerAddress    
 
-data Network = Network { networkP2p :: P2p.P2p
-                       , networkDb :: Db.Db }
+data NetworkState = NetworkState { networkP2p :: P2p.P2p
+                                 , networkStateDb :: Db.Db }
+data Network = Network { networkState :: NetworkState
+                       , braggerThread :: ThreadId
+                       , transactionAnnouncherThread :: ThreadId
+                       , networkListenerThread :: ThreadId }
 
 data NetworkMessage = Brag Int
                     | Ask Hash
@@ -53,41 +59,41 @@ decodeMessage bs = BinGet.runGet Bin.get $ BSL.fromStrict bs
 
 maxBlocksSyncBatch = 50
 
-handlePeerMessage :: Network -> PeerAddress -> NetworkMessage -> StateT NetworkListenerState IO ()
+handlePeerMessage :: NetworkState -> PeerAddress -> NetworkMessage -> StateT NetworkListenerState IO ()
 handlePeerMessage net peer msg = do
-    let db = networkDb net
+    let db = networkStateDb net
     liftIO $ logDebug $ "got message " ++ show msg
     case msg of
       Brag braggedLen -> do
-               (dbLen, topBlock) <- liftIO $ Db.getLongestHead db
+               (dbLen, VerifiedBlock topBlock) <- liftIO $ Db.getLongestHead db
                if dbLen < braggedLen
                then do
-                 liftIO $ logInfo $ "saw bragger with length!" ++ show braggedLen
+                 liftIO $ logDebug $ "saw bragger with length!" ++ show braggedLen
                  s <- get
                  if Map.member peer (networkListenerActiveSyncs s)
                  then liftIO $ logDebug "already syncing from that bragger"
                  else do
-                   liftIO $ logInfo $  "starting sync from " ++ show peer
-                   let askFrom = hash topBlock
+                   liftIO $ logDebug $  "starting sync from " ++ show peer
+                   let askFrom = blockId topBlock
                    let newSync = NetworkBlocksSyncState 1 askFrom
                    let ns = s{networkListenerActiveSyncs=Map.insert peer newSync $ networkListenerActiveSyncs s}
                    put ns
-                   liftIO $ send net peer $ Ask askFrom
+                   liftIO $ isend net peer $ Ask askFrom
                else return ()
       Ask fromHash -> do
-               blocksOpt <- liftIO $ Db.getBlocksFrom (networkDb net) fromHash
+               blocksOpt <- liftIO $ Db.getBlocksFrom (networkStateDb net) fromHash
                case blocksOpt of
                  Just blocks -> do
-                     liftIO $ logInfo $ "proposing blocks from " ++ show fromHash
-                     liftIO $ send net peer $ Propose $ take maxBlocksSyncBatch $ blocks
+                     liftIO $ logDebug $ "proposing blocks from " ++ show fromHash
+                     liftIO $ isend net peer $ Propose $ blocks
                  Nothing -> do
-                     liftIO $ logInfo $ "dunno from hash" ++ show fromHash
-                     liftIO $ send net peer $ Dunno
+                     liftIO $ logDebug $ "dunno from hash" ++ show fromHash
+                     liftIO $ isend net peer $ Dunno
       Propose blocks -> do
                modify (\oldState -> oldState{networkListenerActiveSyncs=
                                                  Map.delete peer $ networkListenerActiveSyncs oldState})
                liftIO $ logDebug $ "pushing blocks to chain" ++ show (length blocks)
-               liftIO $ VerifiedDb.verifyAndPushBlocks (networkDb net) blocks
+               liftIO $ VerifiedDb.verifyAndPushBlocks (networkStateDb net) blocks
       Dunno -> do
                oldState <- get
                let oldSyncStateOpt = Map.lookup peer $ networkListenerActiveSyncs oldState
@@ -96,20 +102,20 @@ handlePeerMessage net peer msg = do
                  Just oldSyncState -> do
                      let askSkipInterval = 2 ^ (networkBlocksSyncAccelerationKoef oldSyncState)
                      let oldFromHash = networkBlockSyncLastAsk oldSyncState
-                     oldBlocks <- liftIO $ Db.getBlocksTo db oldFromHash askSkipInterval
-                     let newFromHash = case oldBlocks of
-                                        [] -> traceShowId $ hash initialBlock
-                                        _ -> hash $ last oldBlocks
+                     oldBlocksOpt <- liftIO $ Db.getBlocksTo db oldFromHash askSkipInterval
+                     let newFromHash = case oldBlocksOpt of
+                                         Nothing -> blockId initialBlock
+                                         Just oldBlocks -> blockId $ verifiedBlock $ last oldBlocks
                      let newSyncState = oldSyncState{ networkBlocksSyncAccelerationKoef =
                                                          1 + networkBlocksSyncAccelerationKoef oldSyncState
                                                     , networkBlockSyncLastAsk = newFromHash }
                      put oldState{networkListenerActiveSyncs=Map.insert peer newSyncState
                                                               $ networkListenerActiveSyncs oldState}
-                     liftIO $ logInfo $ "got dunno; asking from" ++ show newFromHash
+                     liftIO $ logDebug $ "got dunno; asking from" ++ show newFromHash
                                      ++ " with skip " ++ show askSkipInterval
-                     liftIO $ send net peer $ Ask newFromHash
+                     liftIO $ isend net peer $ Ask newFromHash
       PushTransactions transactions -> do
-        liftIO $ VerifiedDb.verifyAndPushTransactions (networkDb net) transactions
+        liftIO $ VerifiedDb.verifyAndPushTransactions (networkStateDb net) transactions
         return ()
 
 
@@ -119,7 +125,7 @@ data NetworkListenerState = NetworkListenerState {
       networkListenerActiveSyncs :: Map.Map PeerAddress NetworkBlocksSyncState } deriving (Show)
 
 
-networkListener :: Network -> IO ()
+networkListener :: NetworkState -> IO ()
 networkListener net = do
       chan <- atomically $ dupTChan $ P2p.p2pRecvChan $ networkP2p net
       let initialState = NetworkListenerState Map.empty
@@ -127,44 +133,61 @@ networkListener net = do
             msg <- liftIO $ atomically $ readTChan chan
             case msg of
               P2p.PeerDisconnected peer -> do
-                  liftIO $ logInfo $ "peer disconnected " ++ show peer
+                  liftIO $ logDebug $ "peer disconnected " ++ show peer
                   modify (\oldState -> oldState{networkListenerActiveSyncs=
                                                     Map.delete peer $ networkListenerActiveSyncs oldState})
               P2p.PeerMessage peer bs -> handlePeerMessage net peer $ decodeMessage bs
             loop 
       evalStateT loop initialState
 
-bragger :: Network -> IO ()
+bragger :: NetworkState -> IO ()
 bragger net =
     let loop = do
           threadDelay (secondsToMicroseconds $ 5)
-          (length, _) <- Db.getLongestHead (networkDb net)
+          (length, _) <- Db.getLongestHead (networkStateDb net)
           logTrace $ "bragging with length of " ++ show length
-          broadcast net $ Brag length
+          ibroadcast net $ Brag length
           loop
     in loop
 
-transactionsAnnouncer :: Network -> IO ()
+transactionsAnnouncer :: NetworkState -> IO ()
 transactionsAnnouncer net = do
   threadDelay (secondsToMicroseconds $ 5)
-  transactionsToAnnounce <- Db.getTransactions $ networkDb net
-  broadcast net $ PushTransactions transactionsToAnnounce
+  transactionsToAnnounce <- Db.getTransactions $ networkStateDb net
+  ibroadcast net $ PushTransactions transactionsToAnnounce
   transactionsAnnouncer net
               
 
 start :: P2p.P2pConfig -> [P2p.PeerAddress] -> Db.Db -> IO Network 
 start p2pConfig seeds db  = do
-    network <- Network <$> (P2p.start seeds p2pConfig) <*> pure db
-    forkIO $ networkListener network
-    forkIO $ bragger network
-    forkIO $ transactionsAnnouncer network
-    return network
+    networkState <- NetworkState <$> (P2p.start seeds p2pConfig) <*> pure db
+    networkListenerThread <- forkIO $ networkListener networkState
+    braggerThread <- forkIO $ bragger networkState
+    transactionAnnouncherThread <- forkIO $ transactionsAnnouncer networkState
+    return Network{..}
 
+stop :: Network -> IO ()
+stop net = do
+  killThread $ networkListenerThread net
+  killThread $ transactionAnnouncherThread net
+  killThread $ braggerThread net
+  P2p.stop $ networkP2p $ networkState net
+
+ibroadcast ::  NetworkState -> NetworkMessage -> IO ()
+ibroadcast ns msg = P2p.broadcastPayload (networkP2p $ ns) (encodeMessage msg)
+           
 broadcast :: Network -> NetworkMessage -> IO ()
-broadcast net msg = P2p.broadcastPayload (networkP2p net) (encodeMessage msg)
+broadcast net msg = ibroadcast (networkState net) msg
 
+isend :: NetworkState -> PeerAddress -> NetworkMessage -> IO ()
+isend net peer msg = P2p.sendPayload  (networkP2p net) peer (encodeMessage msg)
+                    
 send :: Network -> PeerAddress -> NetworkMessage -> IO ()
-send net peer msg = P2p.sendPayload  (networkP2p net) peer (encodeMessage msg)
+send net peer msg = isend (networkState net) peer msg
 
 networkTime :: Network -> IO TimeStamp
-networkTime net = P2p.networkTime $ networkP2p net
+networkTime net = P2p.networkTime $ networkP2p $ networkState net
+
+
+networkDb :: Network -> Db.Db
+networkDb net = networkStateDb $ networkState net
