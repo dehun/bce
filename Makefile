@@ -7,6 +7,6 @@ configure:
 make: configure
 	cabal build
 test : configure
-	cabal build test && ./dist/build/test/test --color -j8 +RTS -N8 -RTS
+	cabal build test && ./dist/build/test/test --color -j8 +RTS -N2 -RTS
 clean:
 	cabal clean
