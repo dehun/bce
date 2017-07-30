@@ -23,8 +23,9 @@
 ** DONE cover shit with unit tests
 ** DONE fix weird race condition in "pass findOneBlock"
 ** DONE test forks
+** DONE verify against transactions currently in the memory list
+** TODO review in the memory consumption list
 ** TODO use network time in verification! security issue!
-** TODO verify against transactions currently in the list
 ** TODO implement transactions signature
 ** TODO limit fork depth
 ** TODO debug transactions
