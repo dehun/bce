@@ -83,26 +83,6 @@ waitCondition timeout condition  =
 spec :: Spec    
 spec = parallel $ do
   describe "Networking" $ do
-    it "networking sync transactions" $ property $ \withNetworks -> do
-        (runWithArbNetworks withNetworks) $ \nets -> do
-            let dbs = map Networking.networkDb nets
-            let getDbLengths = mapM (\db -> do
-                                       (l, _) <- Db.getLongestHead db
-                                       return (db, l)) dbs                      
-            dbLengths <- getDbLengths
-            let (maxDb, longest) = maximumBy (comparing snd) dbLengths
-            (_, VerifiedBlock topBlock) <- Db.getLongestHead maxDb
-            unspent <- Db.unspentAt maxDb $ blockId topBlock
-            Just (tx, _) <- generateArbitraryTx maxDb unspent $ Set.toList $ keyPairs withNetworks
-            VerifiedDb.verifyAndPushTransactions maxDb $ Set.singleton tx
-            Db.getTransactions maxDb `shouldReturn` Set.singleton tx
-            waitCondition 25 $ do             -- wait for blockchains to sync
-                            ls <- map snd <$> getDbLengths
-                            return $ longest == minimum ls
-            let condition = all (==[tx]) <$> mapM (\db -> Set.toList <$> Db.getTransactions db) dbs
-            waitCondition 10 condition             -- wait for transactions to sync
-            condition `shouldReturn` True
-            
     it "networking sync blocks" $ property $ \withNetworks -> do
         (runWithArbNetworks withNetworks) $ \nets -> do
                let dbs = map Networking.networkDb nets
@@ -121,5 +101,26 @@ spec = parallel $ do
                putStrLn "final db lengths are: "
                putStrLn $ show newDbLengths
                mapM_ (\nl -> nl `shouldSatisfy` (==longest)) newDbLengths
+    it "networking sync transactions" $ property $ \withNetworks -> do
+--        pendingWith "fails on travis"
+        (runWithArbNetworks withNetworks) $ \nets -> do
+            let dbs = map Networking.networkDb nets
+            let getDbLengths = mapM (\db -> do
+                                       (l, _) <- Db.getLongestHead db
+                                       return (db, l)) dbs                      
+            dbLengths <- getDbLengths
+            let (maxDb, longest) = maximumBy (comparing snd) dbLengths
+            (_, VerifiedBlock topBlock) <- Db.getLongestHead maxDb
+            unspent <- Db.unspentAt maxDb $ blockId topBlock
+            Just (tx, _) <- generateArbitraryTx maxDb unspent $ Set.toList $ keyPairs withNetworks
+            VerifiedDb.verifyAndPushTransactions maxDb $ Set.singleton tx
+            Db.getTransactions maxDb `shouldReturn` Set.singleton tx
+            waitCondition 25 $ do             -- wait for blockchains to sync
+                            ls <- map snd <$> getDbLengths
+                            return $ longest == minimum ls
+            let condition = all (==[tx]) <$> mapM (\db -> Set.toList <$> Db.getTransactions db) dbs
+            waitCondition 50 condition             -- wait for transactions to sync
+            condition `shouldReturn` True
+                               
                
          
