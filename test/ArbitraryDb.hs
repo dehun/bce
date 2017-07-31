@@ -37,10 +37,8 @@ instance Show DbFiller where
 
 instance Arbitrary KeyPair where
     arbitrary = do
-        let g = unsafePerformIO newGenIO :: CtrDRBG
-        case generatePair g of
-            Left e                  -> error "Arbitrary KeyPair failed"
-            Right (keyPair, gNew)   -> return keyPair
+        Just kp <- generatePairFromPrivate <$> PrivKey <$> fastRandBs 32
+        return $ kp
 
 generateArbitraryTx :: Db.Db -> Set.Set TxOutputRef -> [KeyPair] -> IO (Maybe (Transaction, Set.Set TxOutputRef))
 generateArbitraryTx db unspent keys

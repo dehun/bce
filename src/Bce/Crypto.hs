@@ -59,3 +59,13 @@ generatePair g =
                 let priv = PrivKey (Ec.exportPrivate ecPriv)
                     pub = PubKey (Ec.exportPublic ecPub)
                 in Right (KeyPair pub priv, gNew)
+
+generatePairFromPrivate :: PrivKey -> Maybe KeyPair
+generatePairFromPrivate pk = do
+  let PrivKey pkbs = pk
+  pub <- Ec.generatePublic <$> Ec.importPrivate pkbs
+  let ourpub = PubKey $ Ec.exportPublic pub
+  return $  KeyPair ourpub pk
+
+
+
