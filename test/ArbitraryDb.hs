@@ -103,7 +103,7 @@ instance Arbitrary DbFiller where
                              (target, arbBlock) <- arbitraryPointToBuild db maxHeadsNum rnd
                              let Just arbKey = randomPick keys rnd 
                              unspent <- Db.unspentAt db (blockId arbBlock)
-                             utxs <- Set.fromList <$> generateArbitraryTxs db unspent keys
+                             utxs <- Set.fromList <$> generateArbitraryTxs db unspent (initialBlockKeyPair:keys)
                              ctx <- Miner.coinbaseTransaction db (keyPairPub arbKey) utxs
                              let txs = Set.insert ctx utxs
                              blk <- findOneBlock now txs target $ blockId arbBlock
