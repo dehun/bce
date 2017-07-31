@@ -1,3 +1,4 @@
+[![Build Status](https://travis-ci.org/dehun/bce.svg?branch=master)](https://travis-ci.org/dehun/bce)
 # Intro #
 Bce is BlockChain experiment intended to grasp the essence of blockchain technology.
 It is basically a bitcoin copycat with some divergencies in protocols, store, etc.
