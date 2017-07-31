@@ -7,6 +7,7 @@ module Bce.Crypto where
 import Bce.Hash
 import GHC.Generics        
 import Crypto.Random
+import Data.Maybe    
 
 import qualified Data.ByteString.Char8 as BS    
 import qualified Data.ByteString.Base16 as B16
@@ -66,6 +67,10 @@ generatePairFromPrivate pk = do
   pub <- Ec.generatePublic <$> Ec.importPrivate pkbs
   let ourpub = PubKey $ Ec.exportPublic pub
   return $  KeyPair ourpub pk
+
+isValidPubKey :: PubKey -> Bool
+isValidPubKey (PubKey pkbs) =
+    isJust $ Ec.importPublic pkbs
 
 
 

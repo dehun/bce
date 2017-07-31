@@ -81,6 +81,7 @@ verifyTransactionTransaction db tx@(Transaction inputs outputs sig) = do
   guard (fromJust fee >= 0) `mplus` left "transaction fee is below zero"
   guard (length inputs > 0) `mplus` left "there are should be at least one transaction input"
   guard (length outputs > 0) `mplus` left "there are should be at least one transaction output"
+  guard (all (isValidPubKey . outputPubKey) outputs) `mplus` left "invalid pubkey in transaction output"
   verifyTransactionSignature db tx
   return $ VerifiedTransaction tx
 verifyTransactionTransaction db _ = left "coinbase transaction is not allowed"
@@ -95,8 +96,10 @@ verifyTransaction db block tx =
                       `mplus` left "more than one output in coinbase transaction"
             expectedCoinbaseReward <- liftIO $ Db.maxCoinbaseReward db (Set.toList $ blockTransactions block)
             guard (isJust expectedCoinbaseReward) `mplus` left "can not calculate or wrong coinbase reward"
-            guard ((outputAmount $ head $ Set.toList $ outputs) == fromJust expectedCoinbaseReward)
+            let output = head $ Set.toList $ outputs
+            guard ((outputAmount $ output) == fromJust expectedCoinbaseReward)
                       `mplus` left "coinbase reward is incorrectly stamped"
+            guard (isValidPubKey $ outputPubKey output ) `mplus` left "invalid pubkey in coinbase tx"
     Transaction inputs outputs sig -> do
         verifyTransactionTransaction db tx
         return ()

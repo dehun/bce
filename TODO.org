@@ -26,6 +26,7 @@
 ** DONE verify against transactions currently in the memory list
 ** DONE implement transactions signature
 ** DONE use network time in verification! security issue!
+** TODO validate that public keys are valid
 ** TODO review in the memory consumption list
 ** TODO limit fork depth
 ** TODO debug transactions
