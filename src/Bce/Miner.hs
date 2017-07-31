@@ -65,7 +65,7 @@ growOneBlock db ownerKey timer = do
      v <- VerifiedDb.verifyAndPushBlock db nextBlock
      (headLength, VerifiedBlock topBlock) <- Db.getLongestHead db
      nextDiff <- Db.getNextDifficulity db
-     logDebug $ "got chain of length " ++ show headLength
+     logInfo $ "got chain of length " ++ show headLength
                   ++ "; block difficulity is " ++ (show $ blockDifficulity topBlock)
                   ++ "; next difficulity is " ++ (show nextDiff)
                   ++ "; blockhash is " ++ (show $ hash topBlock)

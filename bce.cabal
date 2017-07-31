@@ -68,7 +68,7 @@ library
                                          
 
 executable bcedaemon
-    ghc-options: -threaded    
+    ghc-options: -threaded
     main-is:             Main.hs
   -- other-modules:       
   -- other-extensions:    
