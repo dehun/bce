@@ -47,6 +47,8 @@ verifyBlockDifficulity db block = do
   guard (actualDifficulity >= expectedDifficulity) `mplus` left "wrong difficulity"
 
 
+
+maxTimeFuture = 60*60*2        
 blocksForTimeAveraging = 10                         
 verifyBlockTimestamp db block = do
   let blockTimestamp  = bhWallClockTime . blockHeader
@@ -57,7 +59,8 @@ verifyBlockTimestamp db block = do
     Just lastBlocks -> do
       let avgTime = median $ map blockTimestamp $ map verifiedBlock lastBlocks
       guard (blockTimestamp block >= avgTime) `mplus` left "block timestamp is incorrect, less than last avg"
-
+      furthestAcceptableTime <- liftIO $ (+) maxTimeFuture <$> now
+      guard (blockTimestamp block < furthestAcceptableTime) `mplus` left "block timestamp is incorrect, too much into future"
 
 verifyTransactionSignature db tx =
     case tx of

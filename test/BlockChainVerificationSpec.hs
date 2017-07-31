@@ -80,7 +80,16 @@ spec =  do
          b <- findOneBlock (return $ t - 10^9) (Set.singleton cbtx) target (blockId block)
          r <- runEitherT $ Verification.verifyBlock db b
          r `shouldSatisfy` isLeft
-         r `shouldSatisfy` (\(Left m) -> "block timestamp is incorrect" `isInfixOf` m)           
+         r `shouldSatisfy` (\(Left m) -> "block timestamp is incorrect" `isInfixOf` m)
+      it "catches block from the far future" $ \db -> property $ \filler keyPair rnd maxHeads -> do
+         (dbFillerRun filler) db
+         (target, block) <- arbitraryPointToBuild db maxHeads rnd 
+         cbtx <- Miner.coinbaseTransaction db (keyPairPub keyPair) Set.empty                              
+         t <- now 
+         b <- findOneBlock ((+) (60*60*3) <$> now) (Set.singleton cbtx) target (blockId block)
+         r <- runEitherT $ Verification.verifyBlock db b
+         r `shouldSatisfy` isLeft
+         r `shouldSatisfy` (\(Left m) -> "block timestamp is incorrect" `isInfixOf` m)                      
       it "catches multiple coinbase transactions with different keys"
              $ \db -> property $ \filler keyPair1 keyPair2 rnd maxHeads -> do
          (dbFillerRun filler) db
