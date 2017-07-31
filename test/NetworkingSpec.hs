@@ -102,7 +102,7 @@ spec = parallel $ do
                putStrLn $ show newDbLengths
                mapM_ (\nl -> nl `shouldSatisfy` (==longest)) newDbLengths
     it "networking sync transactions" $ property $ \withNetworks -> do
---        pendingWith "fails on travis"
+        pendingWith "fails on travis"
         (runWithArbNetworks withNetworks) $ \nets -> do
             let dbs = map Networking.networkDb nets
             let getDbLengths = mapM (\db -> do
