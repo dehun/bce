@@ -26,18 +26,18 @@
 ** DONE verify against transactions currently in the memory list
 ** DONE implement transactions signature
 ** DONE use network time in verification! security issue!
-** TODO validate that public keys are valid
+** DONE validate that public keys are valid
+** TODO implement client/wallet
 ** TODO review in the memory consumption list
 ** TODO limit fork depth
 ** TODO debug transactions
 ** TODO command line args parsing
 ** TODO persistent storage for p2p peers
-** TODO dead head pruning
 ** TODO improve p2p again - 2 connections to same peer should not be possible
 ** TODO select memory hard pow
 ** TODO configuration (maybe just through command line?)
-** TODO set limit on amount of peers to store
 ** TODO investigate possibility of hard fork due to imperfect p2p
-** TODO fix hlint issues
-** TODO implement client/wallet
 ** TODO rename blockHash to blockId and use blockId block instead of hash block
+** TODO dead head pruning
+** TODO set limit on amount of peers to store
+** TODO fix hlint issues
