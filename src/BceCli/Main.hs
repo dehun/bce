@@ -2,12 +2,58 @@ import Control.Monad
 import Data.Either    
 
 import Command
-import System.IO    
-    
+import Bce.Crypto
+import Bce.BlockChainSerialization
+
+
+import System.IO
+import System.Directory
+import System.Random
+import Data.List    
+import Crypto.Random.DRBG        
+import qualified Data.Binary as Bin
+import qualified Data.Binary.Get as BinGet
+import qualified Data.Binary.Put as BinPut
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
+
+walletsDirectory = ".bcewallets/"    
+
+logd msg = return () --putStrLn $ "[d]" ++ msg
+logi msg = putStrLn $ "[i] " ++ msg
+logw msg = putStrLn $ "[!] " ++ msg
+loge msg = putStrLn $ "[!!!] " ++ msg
+logs msg = putStrLn $ "[v]" ++ msg
 
 shellPrefix = "[_]>> "
 
-processCmd cmd = putStrLn $ show cmd
+pubKeyLengthInHex = 32*2
+
+processCmd Shell = return ()
+processCmd CreateWallet = do
+    createDirectoryIfMissing True walletsDirectory
+    g <- newGenIO :: IO CtrDRBG
+    case generatePair g of
+      Left err -> loge $ "failed to generate keypair: " ++ show err
+      Right (kp, _) -> do
+        logi "successfully generated keypair, writing to disk..."
+        let path = walletsDirectory ++ "/" ++ (show $ keyPairPub kp) ++ ".kp"
+        let content = BSL.toStrict $ BinPut.runPut $ Bin.put kp                               
+        BS.writeFile path content
+        logs $ "successfully generated " ++ path
+    
+processCmd ListWallets = do
+  fs <- listDirectory walletsDirectory
+  let kpfs = filter (\p -> and [ length p == pubKeyLengthInHex+3
+                              , isSuffixOf ".kp" p]) fs
+  mapM_ (\(idx, kpf) ->
+            logs $ "[" ++ show idx ++ "]" ++ " -> " ++ (take pubKeyLengthInHex $ kpf)
+       ) $ zip [1..] kpfs
+
+processCmd (PerformTransaction sender receiver amount) = undefined
+processCmd ShowHead = undefined
+processCmd (ShowBlock blockId) = undefined
+processCmd (ShowTransaction txId) = undefined
               
 main = do
   hSetBuffering stdout NoBuffering

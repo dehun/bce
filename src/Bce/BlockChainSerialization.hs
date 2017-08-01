@@ -19,7 +19,8 @@ import qualified Data.ByteString.Base16 as B16
 
 instance Bin.Binary Hash
 instance Bin.Binary PubKey
-instance Bin.Binary PrivKey        
+instance Bin.Binary PrivKey
+instance Bin.Binary KeyPair    
 instance Bin.Binary BlockChain.TxOutputRef                    
 instance Bin.Binary BlockChain.TxOutput                
 instance Bin.Binary BlockChain.TxInput            
