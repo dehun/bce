@@ -99,6 +99,11 @@ getBalance = do
         json $ WalletBalance balance
     Nothing -> json $ RespondError "no wallet parameter"
 
+getHead = do
+  ApiState db <- getState
+  (headLength, headBlock) <- liftIO $ Db.getLongestHead db
+  json $ Head headLength (blockId $ verifiedBlock headBlock)
+
 
 app :: Api
 app = do
@@ -107,5 +112,6 @@ app = do
   get "/transaction" getTransaction
   post "/transaction" postTransaction
   get "/balance" getBalance
+  get "/head" getHead
 
   

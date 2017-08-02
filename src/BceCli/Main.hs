@@ -72,7 +72,16 @@ processCmd (PerformTransaction sender receiver amount) = do
 --  let tx = Transaction 
 --  let req = initialReq {method = "POST", requestBody = RequestBodyLBS $ encode requestObject}
 
-processCmd ShowHead = undefined
+processCmd ShowHead = do
+  manager <- newManager defaultManagerSettings
+  req <- parseRequest $ "http://" ++ backendAddress ++ "/head"
+  res <- httpLbs req manager
+  case decode $ responseBody res of
+    Just (Head headLength headBlockId) -> do
+        logs $ "head length:" ++ show headLength
+        logs $ "head block id: " ++ show headBlockId
+    Nothing -> loge "invalid format supplied" 
+  
 processCmd (ShowBlock blockId) = undefined
 processCmd (ShowTransaction txId) = undefined
 processCmd (QueryBalance walletId) = do
@@ -88,6 +97,7 @@ processCmd (QueryBalance walletId) = do
                      logs $ "in total: "  ++ show (sum $ map outputAmount outputs)
     Nothing -> logw "wrong response format"
 
+
 resolveBalance :: WalletId -> IO (Maybe WalletBalance)
 resolveBalance walletId = do
   manager <- newManager defaultManagerSettings  
@@ -98,6 +108,7 @@ resolveBalance walletId = do
   case decode body of
     Just (WalletBalance outputRefs) -> return $ Just $ WalletBalance outputRefs
     Nothing -> return Nothing
+
 
 resolveOutput :: TxOutputRef -> IO (Maybe TxOutput)
 resolveOutput (TxOutputRef txId outputIdx) = do

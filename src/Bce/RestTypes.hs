@@ -21,7 +21,8 @@ data RestTransaction = RestTransaction {
     , txId :: TransactionId
       } deriving (Generic, Eq, Show)
 
-instance ToJSON RestTransaction                     
+instance ToJSON RestTransaction
+instance FromJSON RestTransaction                         
     
 data RestBlock = RestBlock {
       blockHeader :: BlockHeader
@@ -29,9 +30,18 @@ data RestBlock = RestBlock {
       } deriving (Generic, Eq, Show)
 
 instance ToJSON RestBlock
+instance FromJSON RestBlock    
 
 blockToRestBlock :: Block -> RestBlock
 blockToRestBlock blk =
     let hdr = Bce.BlockChain.blockHeader blk
         txs = map (\tx -> RestTransaction tx (transactionId blk tx)) $ Set.toList (blockTransactions blk)
     in RestBlock hdr txs
+
+data Head = Head {
+      headLength :: Int
+    , headBlockId :: BlockId
+      } deriving (Generic, Eq, Show)
+
+instance ToJSON Head
+instance FromJSON Head
