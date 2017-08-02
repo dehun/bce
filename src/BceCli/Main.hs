@@ -93,7 +93,21 @@ processCmd (ShowBlock blockId) = do
         logs $ "transactions: "
         mapM_ (\tx -> putStrLn $  "  " ++ show tx) transactions
     Nothing -> loge "invalid format supplied" 
-processCmd (ShowTransaction txId) = undefined
+
+processCmd (ShowTransaction txId) = do
+  manager <- newManager defaultManagerSettings
+  req <- parseRequest $ "http://" ++ backendAddress ++ "/transaction?txId=" ++ show txId             
+  res <- httpLbs req manager
+  case decode $ responseBody res of
+    Just tx@(Transaction _ _ _) -> do
+        logs $ "id: " ++ show txId
+        logs $ show tx
+    Just tx@(CoinbaseTransaction _) -> do
+        logs $ "id: " ++ show txId
+        logs $ show tx             
+    Nothing -> loge "invalid format supplied" 
+
+
 processCmd (QueryBalance walletId) = do
   walletOpt <- resolveBalance walletId
   case walletOpt of
