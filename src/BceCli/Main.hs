@@ -3,8 +3,10 @@ import Data.Either
 
 import Command
 import Bce.Crypto
+import Bce.Util    
 import Bce.BlockChainSerialization
-import Bce.RestTypes    
+import Bce.RestTypes
+import Bce.BlockChain
 
 
 import System.IO
@@ -13,13 +15,16 @@ import System.Random
 import Data.Aeson
 import Data.List    
 import Crypto.Random.DRBG
-import Network.HTTP.Client    
+import Network.HTTP.Client
+import qualified Data.Set as Set    
 import qualified Data.Binary as Bin
 import qualified Data.Binary.Get as BinGet
 import qualified Data.Binary.Put as BinPut
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 
+
+backendAddress = "127.0.0.1:8081"
 walletsDirectory = ".bcewallets/"    
 
 logd msg = return () --putStrLn $ "[d]" ++ msg
@@ -64,13 +69,35 @@ processCmd ShowHead = undefined
 processCmd (ShowBlock blockId) = undefined
 processCmd (ShowTransaction txId) = undefined
 processCmd (QueryBalance walletId) = do
+  logi $ "performing http request towards " ++ backendAddress
   manager <- newManager defaultManagerSettings  
-  req <- parseRequest $ "http://localhost:8081/balance?wallet=" ++ show walletId
+  req <- parseRequest $ "http://" ++ backendAddress ++ "/balance?wallet=" ++ show walletId
   res <-  httpLbs req manager
   let body = responseBody res
-  putStrLn $ show body
---  let WalletBalance outputs = parseJSON bs
-  return ()
+  logi $ "received response with length: " ++ show (BSL.length body)
+  case decode body of
+    Just (WalletBalance outputRefs) -> do
+          logs $ "total outputs: " ++ show (Set.size outputRefs)
+          logi $ "resolving outputs... "
+          outputsOpt <- mapM resolveOutput $ Set.toList outputRefs
+          case sequence outputsOpt of
+            Nothing -> loge "failed to resolve outputs"
+            Just outputs -> do
+                     logs $ "in total: "  ++ show (sum $ map outputAmount outputs)
+    Nothing -> logw "wrong response format"
+
+resolveOutput :: TxOutputRef -> IO (Maybe TxOutput)
+resolveOutput (TxOutputRef txId outputIdx) = do
+  manager <- newManager defaultManagerSettings  
+  req <- parseRequest $ "http://" ++ backendAddress ++ "/transaction?txId=" ++ show txId
+  res <- httpLbs req manager
+  let body = responseBody res
+  case decode body of
+    Just (Transaction txInputs txOutputs sig) ->
+        return $ (Set.toList txOutputs) `at` (fromIntegral outputIdx)
+    Nothing -> do
+      logw "incorrect response format"
+      return Nothing
               
 main = do
   hSetBuffering stdout NoBuffering
@@ -83,4 +110,5 @@ main = do
            Right cmd -> do
               processCmd cmd
                         
+
          

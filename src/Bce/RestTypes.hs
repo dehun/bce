@@ -13,7 +13,8 @@ import Data.Aeson hiding (json)
 
 
 data WalletBalance = WalletBalance { outputs :: Set.Set TxOutputRef } deriving (Show, Eq, Generic)
-instance ToJSON WalletBalance                   
+instance ToJSON WalletBalance
+instance FromJSON WalletBalance    
     
 data RestTransaction = RestTransaction {
       tx :: Transaction
