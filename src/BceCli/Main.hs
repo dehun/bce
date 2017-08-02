@@ -38,7 +38,7 @@ logd msg = return () --putStrLn $ "[d]" ++ msg
 logi msg = putStrLn $ "[i] " ++ msg
 logw msg = putStrLn $ "[!] " ++ msg
 loge msg = putStrLn $ "[!!!] " ++ msg
-logs msg = putStrLn $ "[v]" ++ msg
+logs msg = putStrLn $ "[v] " ++ msg
 
 shellPrefix = "[_]>> "
 
@@ -82,7 +82,17 @@ processCmd ShowHead = do
         logs $ "head block id: " ++ show headBlockId
     Nothing -> loge "invalid format supplied" 
   
-processCmd (ShowBlock blockId) = undefined
+processCmd (ShowBlock blockId) = do
+  manager <- newManager defaultManagerSettings
+  req <- parseRequest $ "http://" ++ backendAddress ++ "/block?blockId=" ++ show blockId
+  res <- httpLbs req manager
+  case decode $ responseBody res of
+    Just blk@(RestBlock header transactions) -> do
+--        logs $ "blockId:" ++ show (blockId header)
+        logs $ "header: " ++ show header
+        logs $ "transactions: "
+        mapM_ (\tx -> putStrLn $  "  " ++ show tx) transactions
+    Nothing -> loge "invalid format supplied" 
 processCmd (ShowTransaction txId) = undefined
 processCmd (QueryBalance walletId) = do
   walletOpt <- resolveBalance walletId

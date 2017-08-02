@@ -55,7 +55,7 @@ blockChainCommandParser = do
 commandParser = do
   spaces
   (eof >> return Shell)
-   <|> (string "blockchain" >> blockChainCommandParser)
+   <|> (string "chain" >> blockChainCommandParser)
    <|> (string "wallet" >> walletCommandParser)
                   
                         
