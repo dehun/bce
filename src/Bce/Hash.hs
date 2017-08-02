@@ -12,7 +12,8 @@ import qualified Data.ByteString.Base16 as B16
 import qualified Data.Text.Encoding as TextEncoding        
 import GHC.Int(Int64)
 import GHC.Generics (Generic)
-import Data.Binary    
+import Data.Binary
+import Debug.Trace    
 
 data Hash = Hash { hashBs :: BS.ByteString } deriving (Eq, Ord, Generic)
 

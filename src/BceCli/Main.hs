@@ -1,8 +1,13 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 import Control.Monad
 import Data.Either    
 
 import Command
 import Bce.Crypto
+import Bce.Hash    
 import Bce.Util    
 import Bce.BlockChainSerialization
 import Bce.RestTypes
@@ -16,7 +21,9 @@ import Data.Aeson
 import Data.List    
 import Crypto.Random.DRBG
 import Network.HTTP.Client
-import qualified Data.Set as Set    
+import qualified Data.ByteString.Char8 as BC8
+import qualified Data.ByteString.Base16 as B16
+import qualified Data.Set as Set
 import qualified Data.Binary as Bin
 import qualified Data.Binary.Get as BinGet
 import qualified Data.Binary.Put as BinPut
@@ -69,13 +76,8 @@ processCmd ShowHead = undefined
 processCmd (ShowBlock blockId) = undefined
 processCmd (ShowTransaction txId) = undefined
 processCmd (QueryBalance walletId) = do
-  logi $ "performing http request towards " ++ backendAddress
-  manager <- newManager defaultManagerSettings  
-  req <- parseRequest $ "http://" ++ backendAddress ++ "/balance?wallet=" ++ show walletId
-  res <-  httpLbs req manager
-  let body = responseBody res
-  logi $ "received response with length: " ++ show (BSL.length body)
-  case decode body of
+  walletOpt <- resolveBalance walletId
+  case walletOpt of
     Just (WalletBalance outputRefs) -> do
           logs $ "total outputs: " ++ show (Set.size outputRefs)
           logi $ "resolving outputs... "
@@ -86,14 +88,28 @@ processCmd (QueryBalance walletId) = do
                      logs $ "in total: "  ++ show (sum $ map outputAmount outputs)
     Nothing -> logw "wrong response format"
 
+resolveBalance :: WalletId -> IO (Maybe WalletBalance)
+resolveBalance walletId = do
+  manager <- newManager defaultManagerSettings  
+  req <- parseRequest $ "http://" ++ backendAddress ++ "/balance?wallet=" ++ show walletId
+  res <-  httpLbs req manager
+  let body = responseBody res
+  logi $ "received response with length: " ++ show (BSL.length body)
+  case decode body of
+    Just (WalletBalance outputRefs) -> return $ Just $ WalletBalance outputRefs
+    Nothing -> return Nothing
+
 resolveOutput :: TxOutputRef -> IO (Maybe TxOutput)
 resolveOutput (TxOutputRef txId outputIdx) = do
-  manager <- newManager defaultManagerSettings  
+  manager <- newManager defaultManagerSettings
   req <- parseRequest $ "http://" ++ backendAddress ++ "/transaction?txId=" ++ show txId
   res <- httpLbs req manager
   let body = responseBody res
+  logi $ show body
   case decode body of
     Just (Transaction txInputs txOutputs sig) ->
+        return $ (Set.toList txOutputs) `at` (fromIntegral outputIdx)
+    Just (CoinbaseTransaction txOutputs) ->
         return $ (Set.toList txOutputs) `at` (fromIntegral outputIdx)
     Nothing -> do
       logw "incorrect response format"

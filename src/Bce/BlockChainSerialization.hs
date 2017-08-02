@@ -32,7 +32,7 @@ instance Aeson.ToJSON BS.ByteString where
     toJSON bs = Aeson.toJSON (TextEncoding.decodeUtf8 $ B16.encode bs)
 
 instance Aeson.FromJSON BS.ByteString where
-    parseJSON (Aeson.String txt) = return $  TextEncoding.encodeUtf8 txt
+    parseJSON (Aeson.String txt) = return $ fst $ B16.decode $ TextEncoding.encodeUtf8 txt
 
 
 instance Aeson.FromJSON Hash

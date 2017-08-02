@@ -42,6 +42,7 @@ main = do
   let Right (keyPair, gNew) = generatePair g
 
   let ownerKey = keyPairPub keyPair
+  logInfo $ "mining with key " ++ show ownerKey
 
   Miner.mineForever db ownerKey networkTimer
 
