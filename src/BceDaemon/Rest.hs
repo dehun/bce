@@ -12,6 +12,7 @@ import Bce.Util
 import Bce.Hash    
 import Bce.Crypto
 import Bce.Logger
+import Bce.RestTypes    
     
 
 
@@ -31,27 +32,6 @@ import qualified Data.Set as Set
 data ApiState = ApiState {apiDb :: Db.Db}  
 type Api = SpockM () () ApiState ()
 type ApiAction a = SpockAction () () ApiState a
-
-data RestTransaction = RestTransaction {
-      tx :: Transaction
-    , txId :: TransactionId
-      } deriving (Generic, Eq, Show)
-
-instance ToJSON RestTransaction                     
-    
-data RestBlock = RestBlock {
-      blockHeader :: BlockHeader
-    , transactions :: [RestTransaction]
-      } deriving (Generic, Eq, Show)
-
-instance ToJSON RestBlock
-
-blockToRestBlock :: Block -> RestBlock
-blockToRestBlock blk =
-    let hdr = Bce.BlockChain.blockHeader blk
-        txs = map (\tx -> RestTransaction tx (transactionId blk tx)) $ Set.toList (blockTransactions blk)
-    in RestBlock hdr txs
-
 
 start :: Db.Db -> Int -> IO ()
 start db port =  discardResult $ forkIO $ restMain db port
@@ -107,11 +87,6 @@ postTransaction = do
   case res of
     Right () -> json RespondOk
     Left err -> json $ RespondError err
-
-
-data WalletBalance = WalletBalance { outputs :: Set.Set TxOutputRef } deriving (Show, Eq, Generic)
-instance ToJSON WalletBalance                   
-
 
 getBalance = do
   ApiState db <- getState  

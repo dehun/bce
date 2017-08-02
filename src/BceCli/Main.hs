@@ -4,13 +4,16 @@ import Data.Either
 import Command
 import Bce.Crypto
 import Bce.BlockChainSerialization
+import Bce.RestTypes    
 
 
 import System.IO
 import System.Directory
 import System.Random
+import Data.Aeson
 import Data.List    
-import Crypto.Random.DRBG        
+import Crypto.Random.DRBG
+import Network.HTTP.Client    
 import qualified Data.Binary as Bin
 import qualified Data.Binary.Get as BinGet
 import qualified Data.Binary.Put as BinPut
@@ -48,12 +51,26 @@ processCmd ListWallets = do
                               , isSuffixOf ".kp" p]) fs
   mapM_ (\(idx, kpf) ->
             logs $ "[" ++ show idx ++ "]" ++ " -> " ++ (take pubKeyLengthInHex $ kpf)
-       ) $ zip [1..] kpfs
+       ) $ zip [0..] kpfs
 
-processCmd (PerformTransaction sender receiver amount) = undefined
+processCmd (PerformTransaction sender receiver amount) = do
+  manager <- newManager defaultManagerSettings  
+  initialReq <- parseRequest "http://localhost:8081/transaction"
+  undefined 
+--  let tx = Transaction 
+--  let req = initialReq {method = "POST", requestBody = RequestBodyLBS $ encode requestObject}
+
 processCmd ShowHead = undefined
 processCmd (ShowBlock blockId) = undefined
 processCmd (ShowTransaction txId) = undefined
+processCmd (QueryBalance walletId) = do
+  manager <- newManager defaultManagerSettings  
+  req <- parseRequest $ "http://localhost:8081/balance?wallet=" ++ show walletId
+  res <-  httpLbs req manager
+  let body = responseBody res
+  putStrLn $ show body
+--  let WalletBalance outputs = parseJSON bs
+  return ()
               
 main = do
   hSetBuffering stdout NoBuffering
