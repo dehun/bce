@@ -97,7 +97,7 @@ processCmd (PerformTransaction sender receiver amount) = do
            liftIO $ logs "got all needed information from node"
 
            liftIO $ logi "building transaction..."                
-           let splits = init $ inits outputs
+           let splits = inits outputs
            let splitsum s = sum $ map (fromIntegral . outputAmount . snd) s
            guard (amount <= splitsum outputs) `mplus` left "insufficient funds"
            let Just split = find (\s -> splitsum s >= amount) splits
