@@ -5,9 +5,10 @@ import Text.Parsec.Char
 import Text.Parsec.Combinator
 
 import Bce.BlockChain
-import Bce.Hash    
+import Bce.Hash
+import Bce.Crypto    
 
-type WalletId = Hash    
+type WalletId = PubKey    
 
 data Command = QueryBalance WalletId
              | CreateWallet
@@ -23,7 +24,7 @@ data Command = QueryBalance WalletId
 
 intParser = read <$> many1 digit
 hashParser = read <$> many1 alphaNum                        
-walletIdParser = hashParser
+walletIdParser = read <$> many1 alphaNum
 blockIdParser = hashParser
 txIdParser = hashParser
 

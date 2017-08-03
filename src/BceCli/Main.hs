@@ -73,6 +73,7 @@ processCmd CreateWallet = do
         let content = BSL.toStrict $ BinPut.runPut $ Bin.put kp                               
         BS.writeFile path content
         logs $ "successfully generated " ++ path
+
     
 processCmd ListWallets = do
   fs <- listDirectory walletsDirectory
@@ -82,24 +83,39 @@ processCmd ListWallets = do
             logs $ "[" ++ show idx ++ "]" ++ " -> " ++ (take pubKeyLengthInHex $ kpf)
        ) $ zip [0..] kpfs
 
+
 processCmd (PerformTransaction sender receiver amount) = do
-  undefined
-  -- Just kp <- loadKeyPair sender
-  -- Just (WalletBalance outputRefs) <- resolveBalance sender
-  -- outputsSeq <- mapM resolveOutput outputRefs
-  -- let outputsOpt = (sequence outputsSeq) `fmap` (\s -> zip s outputRefs)
-  -- case outputsOpt of
-  --   Nothing -> loge "failed to resolve outputs"
-  --   Just outputs -> do
-  --     let ourTotal = sum (map (outputAmount . snd) outputs)
-  --     if amount > fromIntegral ourTotal
-  --     then logw  $ "insufficient funds: " ++ show ourTotal " < " ++ show amount
-  --     else do
-  --       let os = sortBy (comparing (outputAmount . snd)) outputs
-  --       let splits = init $ inits os
-  --       let Just split = find (\s -> sum (map snd s) >= amount) splits
-  --       let change = sum split - amount
-  --       undefined
+  msg <- runEitherT $ do
+           liftIO $ logi "loading wallet..."
+           kp <- EitherT $ loadKeyPair sender
+           liftIO $ logs $ "loaded wallet" ++ show (keyPairPub kp)
+           liftIO $ logi "gathering information from node..."
+           (WalletBalance outputRefs) <- EitherT $ resolveBalance sender
+           outputs <- mapM (\ref ->(,) ref <$> (EitherT $ resolveOutput ref)) $ Set.toList outputRefs
+           liftIO $ logs "got all needed information from node"
+
+           liftIO $ logi "building transaction..."                
+           let splits = init $ inits outputs
+           let splitsum s = sum $ map (fromIntegral . outputAmount . snd) s
+           guard (amount <= splitsum outputs) `mplus` left "insufficient funds"
+           let Just split = find (\s -> splitsum s >= amount) splits
+           let change = splitsum split - amount
+           let inputs = Set.fromList $ map (TxInput . fst) split
+           let outputs = Set.union changeOutput receiverOutputs
+                         where changeOutput =
+                                   if change == 0
+                                   then Set.empty
+                                   else Set.singleton (TxOutput (fromIntegral change) $ keyPairPub kp)
+                               receiverOutputs = Set.singleton $ TxOutput (fromIntegral amount) receiver
+           let signature = sign (hash (inputs, outputs)) $ keyPairPriv kp
+           let tx = Transaction inputs outputs signature
+           liftIO $ logs "built transaction"
+           right "done"
+
+  case msg of
+    Right s -> logs s
+    Left e -> logw e
+
         
 
 processCmd ShowHead = do
