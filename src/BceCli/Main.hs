@@ -14,10 +14,16 @@ import Bce.RestTypes
 import Bce.BlockChain
 
 
+import Data.Ord    
 import System.IO
+import Control.Monad.Trans.Either
+import Control.Monad
+import Control.Monad.Trans    
 import System.Directory
 import System.Random
 import Data.Aeson
+import Data.Either
+import Data.Either.Utils    
 import Data.List    
 import Crypto.Random.DRBG
 import Network.HTTP.Client
@@ -44,6 +50,17 @@ shellPrefix = "[_]>> "
 
 pubKeyLengthInHex = 32*2
 
+type Error = String                    
+
+
+loadKeyPair :: WalletId -> IO (Either Error KeyPair)
+loadKeyPair walletId = do
+  let path = walletsDirectory ++ "/" ++ show walletId ++ ".kp"
+  content <- BS.readFile path
+  let kp = BinGet.runGet Bin.get (BSL.fromStrict content)  :: KeyPair
+  return $ Right kp
+
+
 processCmd Shell = return ()
 processCmd CreateWallet = do
     createDirectoryIfMissing True walletsDirectory
@@ -66,11 +83,24 @@ processCmd ListWallets = do
        ) $ zip [0..] kpfs
 
 processCmd (PerformTransaction sender receiver amount) = do
-  manager <- newManager defaultManagerSettings  
-  initialReq <- parseRequest "http://localhost:8081/transaction"
-  undefined 
---  let tx = Transaction 
---  let req = initialReq {method = "POST", requestBody = RequestBodyLBS $ encode requestObject}
+  undefined
+  -- Just kp <- loadKeyPair sender
+  -- Just (WalletBalance outputRefs) <- resolveBalance sender
+  -- outputsSeq <- mapM resolveOutput outputRefs
+  -- let outputsOpt = (sequence outputsSeq) `fmap` (\s -> zip s outputRefs)
+  -- case outputsOpt of
+  --   Nothing -> loge "failed to resolve outputs"
+  --   Just outputs -> do
+  --     let ourTotal = sum (map (outputAmount . snd) outputs)
+  --     if amount > fromIntegral ourTotal
+  --     then logw  $ "insufficient funds: " ++ show ourTotal " < " ++ show amount
+  --     else do
+  --       let os = sortBy (comparing (outputAmount . snd)) outputs
+  --       let splits = init $ inits os
+  --       let Just split = find (\s -> sum (map snd s) >= amount) splits
+  --       let change = sum split - amount
+  --       undefined
+        
 
 processCmd ShowHead = do
   manager <- newManager defaultManagerSettings
@@ -111,18 +141,18 @@ processCmd (ShowTransaction txId) = do
 processCmd (QueryBalance walletId) = do
   walletOpt <- resolveBalance walletId
   case walletOpt of
-    Just (WalletBalance outputRefs) -> do
+    Right (WalletBalance outputRefs) -> do
           logs $ "total outputs: " ++ show (Set.size outputRefs)
           logi $ "resolving outputs... "
           outputsOpt <- mapM resolveOutput $ Set.toList outputRefs
           case sequence outputsOpt of
-            Nothing -> loge "failed to resolve outputs"
-            Just outputs -> do
+            Left err -> loge $ "failed to resolve outputs: "  ++ err
+            Right outputs -> do
                      logs $ "in total: "  ++ show (sum $ map outputAmount outputs)
-    Nothing -> logw "wrong response format"
+    Left err -> logw $ "failed to query balance: " ++ err
 
 
-resolveBalance :: WalletId -> IO (Maybe WalletBalance)
+resolveBalance :: WalletId -> IO (Either Error WalletBalance)
 resolveBalance walletId = do
   manager <- newManager defaultManagerSettings  
   req <- parseRequest $ "http://" ++ backendAddress ++ "/balance?wallet=" ++ show walletId
@@ -130,11 +160,11 @@ resolveBalance walletId = do
   let body = responseBody res
   logi $ "received response with length: " ++ show (BSL.length body)
   case decode body of
-    Just (WalletBalance outputRefs) -> return $ Just $ WalletBalance outputRefs
-    Nothing -> return Nothing
+    Just (WalletBalance outputRefs) -> return $ Right $ WalletBalance outputRefs
+    Nothing -> return $ Left "invalid format"
 
 
-resolveOutput :: TxOutputRef -> IO (Maybe TxOutput)
+resolveOutput :: TxOutputRef -> IO (Either Error TxOutput)
 resolveOutput (TxOutputRef txId outputIdx) = do
   manager <- newManager defaultManagerSettings
   req <- parseRequest $ "http://" ++ backendAddress ++ "/transaction?txId=" ++ show txId
@@ -143,12 +173,14 @@ resolveOutput (TxOutputRef txId outputIdx) = do
   logi $ show body
   case decode body of
     Just (Transaction txInputs txOutputs sig) ->
-        return $ (Set.toList txOutputs) `at` (fromIntegral outputIdx)
+        return $ maybeToEither "output with such idx is missing"
+                   ((Set.toList txOutputs) `at` (fromIntegral outputIdx))
     Just (CoinbaseTransaction txOutputs) ->
-        return $ (Set.toList txOutputs) `at` (fromIntegral outputIdx)
+        return $ maybeToEither "output with such idx is missing"
+                   ((Set.toList txOutputs) `at` (fromIntegral outputIdx))
     Nothing -> do
       logw "incorrect response format"
-      return Nothing
+      return $ Left "incorrect response format"
               
 main = do
   hSetBuffering stdout NoBuffering

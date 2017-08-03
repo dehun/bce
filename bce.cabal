@@ -14,7 +14,7 @@ cabal-version:       >=1.10
 
 library
     hs-source-dirs: src
-    ghc-options: -threaded
+    ghc-options: 
     build-depends: DRBG
                  , QuickCheck >= 2.8.2
                  , Spock >= 0.12.0.0
@@ -45,6 +45,7 @@ library
                  , time
                  , transformers
                  , word8
+                 , MissingH
                  
     exposed-modules: Bce.BlockChain
                    , Bce.Hash
@@ -147,7 +148,8 @@ executable bcecli
                          time,
                          transformers,
                          word8,
-                         base16-bytestring
+                         base16-bytestring,
+                         MissingH
 
                          
 
@@ -190,6 +192,7 @@ Test-Suite test
                   , time
                   , transformers
                   , word8
+                  , MissingH
 
     default-language:    Haskell2010                  
                          
