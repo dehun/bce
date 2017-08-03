@@ -107,7 +107,8 @@ executable bcedaemon
                          text >= 1.2.2.1,
                          time,
                          transformers,
-                         word8
+                         word8,
+                         async
 
     hs-source-dirs: src/BceDaemon
     default-language:    Haskell2010
@@ -149,7 +150,8 @@ executable bcecli
                          transformers,
                          word8,
                          base16-bytestring,
-                         MissingH
+                         MissingH,
+                         async
 
                          
 
@@ -193,6 +195,7 @@ Test-Suite test
                   , transformers
                   , word8
                   , MissingH
+                  , async
 
     default-language:    Haskell2010                  
                          

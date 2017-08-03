@@ -36,7 +36,7 @@ walletCommandParser = do
       return $ QueryBalance walletId)
    <|> (do string "transaction" >> spaces
            sender <- spaces >> walletIdParser
-           receiver <- walletIdParser
+           receiver <- spaces >> walletIdParser
            amount <- spaces >> intParser
            return $ PerformTransaction sender receiver amount)
    <|> (string "create" >> return CreateWallet)

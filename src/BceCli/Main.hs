@@ -26,6 +26,7 @@ import Data.Either
 import Data.Either.Utils    
 import Data.List    
 import Crypto.Random.DRBG
+import Control.Concurrent.Async    
 import Network.HTTP.Client
 import qualified Data.ByteString.Char8 as BC8
 import qualified Data.ByteString.Base16 as B16
@@ -91,7 +92,8 @@ processCmd (PerformTransaction sender receiver amount) = do
            liftIO $ logs $ "loaded wallet" ++ show (keyPairPub kp)
            liftIO $ logi "gathering information from node..."
            (WalletBalance outputRefs) <- EitherT $ resolveBalance sender
-           outputs <- mapM (\ref ->(,) ref <$> (EitherT $ resolveOutput ref)) $ Set.toList outputRefs
+           pureOutputs <- EitherT (resolveOutputs $ Set.toList outputRefs)
+           let outputs = zip (Set.toList outputRefs) pureOutputs
            liftIO $ logs "got all needed information from node"
 
            liftIO $ logi "building transaction..."                
@@ -110,6 +112,14 @@ processCmd (PerformTransaction sender receiver amount) = do
            let signature = sign (hash (inputs, outputs)) $ keyPairPriv kp
            let tx = Transaction inputs outputs signature
            liftIO $ logs "built transaction"
+
+           liftIO $ logi "pushing transaction to server..."
+           manager <- liftIO $ newManager defaultManagerSettings
+           ireq <- liftIO $ parseRequest $ "http://" ++ backendAddress ++ "/transaction"
+           let req =  ireq {method = "POST"
+                           , requestBody = RequestBodyLBS (encode tx)}
+           res <- liftIO $ httpLbs req manager
+           liftIO $ logs $  "pushed transaction to server with response: " ++ (show $ responseBody res)
            right "done"
 
   case msg of
@@ -160,8 +170,8 @@ processCmd (QueryBalance walletId) = do
     Right (WalletBalance outputRefs) -> do
           logs $ "total outputs: " ++ show (Set.size outputRefs)
           logi $ "resolving outputs... "
-          outputsOpt <- mapM resolveOutput $ Set.toList outputRefs
-          case sequence outputsOpt of
+          outputsEthr <- resolveOutputs $ Set.toList outputRefs
+          case outputsEthr of
             Left err -> loge $ "failed to resolve outputs: "  ++ err
             Right outputs -> do
                      logs $ "in total: "  ++ show (sum $ map outputAmount outputs)
@@ -179,6 +189,11 @@ resolveBalance walletId = do
     Just (WalletBalance outputRefs) -> return $ Right $ WalletBalance outputRefs
     Nothing -> return $ Left "invalid format"
 
+resolveOutputs :: [TxOutputRef] -> IO (Either Error [TxOutput])
+resolveOutputs refs = do
+    outs <- mapConcurrently resolveOutput refs
+    return $ sequence outs
+
 
 resolveOutput :: TxOutputRef -> IO (Either Error TxOutput)
 resolveOutput (TxOutputRef txId outputIdx) = do
@@ -186,7 +201,7 @@ resolveOutput (TxOutputRef txId outputIdx) = do
   req <- parseRequest $ "http://" ++ backendAddress ++ "/transaction?txId=" ++ show txId
   res <- httpLbs req manager
   let body = responseBody res
-  logi $ show body
+--  logi $ show body
   case decode body of
     Just (Transaction txInputs txOutputs sig) ->
         return $ maybeToEither "output with such idx is missing"

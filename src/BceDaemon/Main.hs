@@ -37,11 +37,10 @@ main = do
   Rest.start db (read restApiPort)
   logInfo $ "starting mining"
 
-  g <- newGenIO :: IO CtrDRBG
-
-  let Right (keyPair, gNew) = generatePair g
-
-  let ownerKey = keyPairPub keyPair
+--  g <- newGenIO :: IO CtrDRBG
+--  let Right (keyPair, gNew) = generatePair g
+--  let ownerKey = read "" --keyPairPub keyPair
+  let ownerKey = read "e9c003c3804bc84c1e0996fcb5279927c0cef0e4ed27c114abe86a17cf776eba" --keyPairPub keyPair
   logInfo $ "mining with key " ++ show ownerKey
 
   Miner.mineForever db ownerKey networkTimer
