@@ -36,6 +36,7 @@ import qualified Data.Binary.Get as BinGet
 import qualified Data.Binary.Put as BinPut
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
+import System.Console.Haskeline    
 
 
 backendAddress = "127.0.0.1:8081"
@@ -213,16 +214,20 @@ resolveOutput (TxOutputRef txId outputIdx) = do
       logw "incorrect response format"
       return $ Left "incorrect response format"
               
-main = do
-  hSetBuffering stdout NoBuffering
-  forever $ do
-         putStr shellPrefix
-         cmdLine <- getLine
-         case parseCommand cmdLine of
-           Left err -> do
-              putStrLn $ "wrong input: " ++ show err
-           Right cmd -> do
-              processCmd cmd
+main = runInputT defaultSettings loop
+       where
+         loop :: InputT IO ()
+         loop  = do
+           minput <- getInputLine shellPrefix
+           case minput of
+             Nothing -> loop
+             Just cmdline -> do
+               case parseCommand cmdline of
+                 Left err -> do
+                         liftIO $ loge $ "wrong input: " ++ show err
+                 Right cmd -> do
+                         liftIO $ processCmd cmd
+           loop
                         
 
          

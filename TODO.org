@@ -27,7 +27,9 @@
 ** DONE implement transactions signature
 ** DONE use network time in verification! security issue!
 ** DONE validate that public keys are valid
-** TODO implement client/wallet
+** DONE implement client/wallet
+** TODO config for daemon
+** TODO config for client
 ** TODO review in the memory consumption list
 ** TODO limit fork depth
 ** TODO debug transactions
@@ -41,3 +43,7 @@
 ** TODO dead head pruning
 ** TODO set limit on amount of peers to store
 ** TODO fix hlint issues
+** TODO client should not use outputs that are already in memory
+** TODO improve error handling in client (check status codes of http requests)
+** TODO good help for client command line
+** TODO client non-interactive mode
