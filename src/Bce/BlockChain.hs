@@ -38,6 +38,9 @@ data Transaction =
     , txOutputs :: Set.Set TxOutput
     , txSignature :: Signature } deriving (Show, Eq, Generic)
 
+allTxInputs (CoinbaseTransaction _)= Set.empty
+allTxInputs (Transaction inps _ _) = inps
+
     
 data BlockHeader = BlockHeader {
       bhTransactionsHash :: Hash

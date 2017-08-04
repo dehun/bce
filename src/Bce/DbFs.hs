@@ -218,11 +218,13 @@ maxCoinbaseReward db txs = Lock.with (dbLock db) $ runMaybeT $ do
   return $ baseCoinbaseReward + sum fees
 
 
-
-consumeTransactions :: Db -> Block -> IO ()
-consumeTransactions db block = do
+consumeInMemTransactions :: Db ->IO ()
+consumeInMemTransactions db = do
   oldTxs <- readIORef (dbTransactions db)
-  let newTxs = Set.difference oldTxs (blockTransactions block)
+  (_, VerifiedBlock topBlock) <- getLongestHead db
+  let justConsumedInputs = Set.fromList $ concatMap (Set.toList . allTxInputs) $ blockTransactions topBlock
+  let intersects a b = Set.empty /= Set.intersection a b
+  let newTxs = Set.filter (\tx -> not (intersects justConsumedInputs $ allTxInputs tx)) oldTxs 
   writeIORef (dbTransactions db) newTxs
 
                        
@@ -230,7 +232,6 @@ pushBlock :: Db -> VerifiedBlock -> IO Bool
 pushBlock db (VerifiedBlock block) = Lock.with (dbLock db) $ do
 --      logInfo $ "pushing block" ++ show (hash block)
       pushBlockToDisk db block
-      consumeTransactions db block
       pushBlockToRamState db block
       return True                                                    -- TODO: smell
 
@@ -263,7 +264,7 @@ pushBlockToRamState db block
                     return $ Set.insert newHead fixedHeads
     writeIORef (dbHeads db) newHeads
     updateUnspentCache db block
-
+    consumeInMemTransactions db
 
 
 getBlock :: Db -> Hash -> IO (Maybe VerifiedBlock)
