@@ -38,13 +38,14 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import System.Console.Haskeline
 
+import System.Console.CmdArgs
+import System.Console.CmdArgs.Implicit
+
 
 data ClientConfig = ClientConfig {
       backendAddress :: String
     , walletsDirectory :: String
     } deriving (Show)
-
-defaultClientConfig = ClientConfig {backendAddress = "127.0.0.1:8081", walletsDirectory = ".bcewallets/" }    
 
 
 logd msg = return () --putStrLn $ "[d]" ++ msg
@@ -220,7 +221,14 @@ resolveOutput (TxOutputRef txId outputIdx) config = do
       logw "incorrect response format"
       return $ Left "incorrect response format"
 
-main = runInputT defaultSettings loop
+clientConfig = ClientConfig {backendAddress = def &= help "backend Address" &= opt "127.0.0.1:8081",
+                             walletsDirectory = def &= help "wallets Directory" &= opt ".bcewallets/" }
+                            &= summary "Bce Cli v1"
+
+getConfig :: IO ClientConfig
+getConfig = cmdArgs clientConfig
+
+repl cfg = runInputT defaultSettings loop
        where
          loop :: InputT IO ()
          loop  = do
@@ -232,8 +240,9 @@ main = runInputT defaultSettings loop
                  Left err -> do
                          liftIO $ loge $ "wrong input: " ++ show err
                  Right cmd -> do
-                         liftIO $ processCmd cmd defaultClientConfig
+                         liftIO $ processCmd cmd cfg
            loop
-                        
 
-         
+main = do
+        cfg <- getConfig
+        repl cfg
