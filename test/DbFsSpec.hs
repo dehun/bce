@@ -3,13 +3,15 @@ module DbFsSpec where
 import qualified Bce.DbFs as Db
 import Bce.InitialBlock    
 import qualified Bce.Miner as Miner
+import qualified Bce.VerifiedDb as VerifiedDb            
 import Bce.Hash
 import Bce.Verified    
 import Bce.Crypto    
 import Bce.BlockChain
 import Bce.BlockChainHash
 import Bce.TimeStamp
-import Bce.Util    
+import Bce.Util
+
 
 import Test.Hspec
 import Test.QuickCheck    
@@ -112,7 +114,25 @@ spec = do
                    keysUnspents <- concatMapM (\k -> Set.toList <$> fst <$> Db.getPubKeyBalance db (keyPairPub k))
                                    $ Set.toList (Set.insert initialBlockKeyPair $ dbFillerKeys filler)
                    Set.fromList keysUnspents `shouldBe` unspent
-                   
+           it "correctly gets unconfirmed for key" $ \db -> property $ \filler -> do
+                   (dbFillerRun filler) db
+                   (_, VerifiedBlock topBlock) <- Db.getLongestHead db
+                   let keys = initialBlockKeyPair : (Set.toList $ dbFillerKeys filler)
+                   keysWithBalance <- filterM (\k -> do
+                                                     (u, _) <- Db.getPubKeyBalance db $ keyPairPub k
+                                                     return $ (length u) > 0) keys
+                   toArbIdx <- mod <$> randomIO <*> pure (length keysWithBalance)
+                   let toArbKey = keysWithBalance !! toArbIdx
+                   (unspentBefore, unconfirmedBefore) <- Db.getPubKeyBalance db $ keyPairPub toArbKey
+                   unconfirmedBefore `shouldBe` Set.empty
+                   txs <- generateArbitraryTxs db unspentBefore [toArbKey]
+                   Right () <- VerifiedDb.verifyAndPushTransactions db $ Set.fromList txs
+                   (unspentAfter, unconfirmedAfter) <- Db.getPubKeyBalance db $ keyPairPub toArbKey
+                   unspentAfter `shouldBe` unspentBefore
+                   unconfirmedAfter `shouldBe`
+                                        (Set.fromList
+                                                $ concatMap (\tx -> map inputOutputRef
+                                                                    $ Set.toList $ allTxInputs tx) txs)
            it "does not loose money" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
                    (_, VerifiedBlock topBlock) <- Db.getLongestHead db
@@ -143,7 +163,3 @@ spec = do
                    newUnspent <- Set.toList <$> Db.unspentAt newDb (blockId topBlock)                       
                    oldUnspent `shouldBe` newUnspent
                    flushDb newDb
-                   
-
-                                        
-                   
