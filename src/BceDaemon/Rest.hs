@@ -96,7 +96,7 @@ getBalance = do
         let pubKey = read pubKeyStr :: PubKey
         liftIO $ logInfo $ "inspecting wallet " ++ show pubKey
         balance <- liftIO $ Db.getPubKeyBalance db pubKey
-        json $ WalletBalance balance
+        json $ (uncurry WalletBalance) balance
     Nothing -> json $ RespondError "no wallet parameter"
 
 getHead = do

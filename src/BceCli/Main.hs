@@ -98,7 +98,8 @@ processCmd (PerformTransaction sender receiver amount) config = do
            kp <- EitherT $ loadKeyPair sender config
            liftIO $ logs $ "loaded wallet" ++ show (keyPairPub kp)
            liftIO $ logi "gathering information from node..."
-           (WalletBalance outputRefs) <- EitherT $ resolveBalance sender config
+           (WalletBalance checkedOutputRefs uncheckedOutputRefs) <- EitherT $ resolveBalance sender config
+           let outputRefs = Set.difference checkedOutputRefs uncheckedOutputRefs
            pureOutputs <- EitherT (resolveOutputs (Set.toList outputRefs) config)
            let outputs = zip (Set.toList outputRefs) pureOutputs
            liftIO $ logs "got all needed information from node"
@@ -174,7 +175,7 @@ processCmd (ShowTransaction txId) config = do
 processCmd (QueryBalance walletId) config = do
   walletOpt <- resolveBalance walletId config
   case walletOpt of
-    Right (WalletBalance outputRefs) -> do
+    Right (WalletBalance outputRefs unconfirmedOutputRefs) -> do
           logs $ "total outputs: " ++ show (Set.size outputRefs)
           logi $ "resolving outputs... "
           outputsEthr <- resolveOutputs (Set.toList outputRefs) config
@@ -193,7 +194,8 @@ resolveBalance walletId config = do
   let body = responseBody res
   logi $ "received response with length: " ++ show (BSL.length body)
   case decode body of
-    Just (WalletBalance outputRefs) -> return $ Right $ WalletBalance outputRefs
+    Just (WalletBalance outputRefs unconfirmedOutputRefs) -> return $ Right
+                                                             $ WalletBalance outputRefs unconfirmedOutputRefs
     Nothing -> return $ Left "invalid format"
 
 resolveOutputs :: [TxOutputRef] -> ClientConfig -> IO (Either Error [TxOutput])
@@ -234,6 +236,3 @@ main = runInputT defaultSettings loop
                  Right cmd -> do
                          liftIO $ processCmd cmd defaultClientConfig
            loop
-                        
-
-         

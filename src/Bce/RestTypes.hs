@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Bce.RestTypes where
 
@@ -12,7 +12,8 @@ import qualified Data.Set as Set
 import Data.Aeson hiding (json)    
 
 
-data WalletBalance = WalletBalance { outputs :: Set.Set TxOutputRef } deriving (Show, Eq, Generic)
+data WalletBalance = WalletBalance { outputs :: Set.Set TxOutputRef
+                                   , unconfirmed :: Set.Set TxOutputRef } deriving (Show, Eq, Generic)
 instance ToJSON WalletBalance
 instance FromJSON WalletBalance    
     

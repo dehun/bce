@@ -53,7 +53,8 @@ import Data.Either
 import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Trans.Either
-import Control.Monad.Trans.Maybe        
+import Control.Monad.Trans.Maybe
+import Control.Monad.Extra    
 import Data.List
 import Data.Ord    
 import Control.Monad.IO.Class (liftIO)
@@ -417,10 +418,23 @@ balanceAt db uptoBlock ownerKey = do
                         ) $ Set.toList allUnspentOutputs)
 
 
-getPubKeyBalance :: Db -> PubKey -> IO (Set.Set TxOutputRef)
+getPubKeyBalance :: Db -> PubKey -> IO (Set.Set TxOutputRef, Set.Set TxOutputRef) -- (confirmed, unconfirmed)
 getPubKeyBalance db ownerKey = Lock.with (dbLock db) $ do
     uptoBlock <- hash <$> chainHeadBlockHeader <$> longestHead db
-    balanceAt db uptoBlock ownerKey
+    confirmed <- balanceAt db uptoBlock ownerKey
+
+    inMemTxs <- getTransactions db
+    unconfirmed <- concatMapM (\tx -> do
+                                 outputs <- concatMapM (\inp -> do
+                                                          outOpt <- resolveInputOutput db inp
+                                                          case outOpt of
+                                                            Just out -> return [(inp, out)]
+                                                            Nothing -> return [])
+                                            (Set.toList $ allTxInputs tx)
+                                 let ours = filter (\(inp, out) -> ownerKey == outputPubKey out) outputs
+                                 return $ map (\(inp, out) -> inputOutputRef inp) ours
+                           )  (Set.toList inMemTxs)
+    return (confirmed, Set.fromList unconfirmed)
 
 
 -- kill unperspective forks
