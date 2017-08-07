@@ -28,6 +28,7 @@
 ** DONE use network time in verification! security issue!
 ** DONE validate that public keys are valid
 ** DONE implement client/wallet
+** TODO unconfirmed 
 ** TODO config for daemon
 ** TODO config for client
 ** TODO review in the memory consumption list

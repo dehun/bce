@@ -36,11 +36,16 @@ import qualified Data.Binary.Get as BinGet
 import qualified Data.Binary.Put as BinPut
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
-import System.Console.Haskeline    
+import System.Console.Haskeline
 
 
-backendAddress = "127.0.0.1:8081"
-walletsDirectory = ".bcewallets/"    
+data ClientConfig = ClientConfig {
+      backendAddress :: String
+    , walletsDirectory :: String
+    } deriving (Show)
+
+defaultClientConfig = ClientConfig {backendAddress = "127.0.0.1:8081", walletsDirectory = ".bcewallets/" }    
+
 
 logd msg = return () --putStrLn $ "[d]" ++ msg
 logi msg = putStrLn $ "[i] " ++ msg
@@ -52,33 +57,34 @@ shellPrefix = "[_]>> "
 
 pubKeyLengthInHex = 32*2
 
-type Error = String                    
+type Error = String
 
 
-loadKeyPair :: WalletId -> IO (Either Error KeyPair)
-loadKeyPair walletId = do
-  let path = walletsDirectory ++ "/" ++ show walletId ++ ".kp"
+loadKeyPair :: WalletId -> ClientConfig -> IO (Either Error KeyPair)
+loadKeyPair walletId config = do
+  let path = walletsDirectory config  ++ "/" ++ show walletId ++ ".kp"
   content <- BS.readFile path
   let kp = BinGet.runGet Bin.get (BSL.fromStrict content)  :: KeyPair
   return $ Right kp
 
 
-processCmd Shell = return ()
-processCmd CreateWallet = do
-    createDirectoryIfMissing True walletsDirectory
+processCmd :: Command -> ClientConfig -> IO ()
+processCmd Shell _ = return ()
+processCmd CreateWallet config = do
+    liftIO $ createDirectoryIfMissing True $ walletsDirectory config
     g <- newGenIO :: IO CtrDRBG
     case generatePair g of
       Left err -> loge $ "failed to generate keypair: " ++ show err
       Right (kp, _) -> do
         logi "successfully generated keypair, writing to disk..."
-        let path = walletsDirectory ++ "/" ++ (show $ keyPairPub kp) ++ ".kp"
+        let path = walletsDirectory config ++ "/" ++ (show $ keyPairPub kp) ++ ".kp"
         let content = BSL.toStrict $ BinPut.runPut $ Bin.put kp                               
         BS.writeFile path content
         logs $ "successfully generated " ++ path
 
     
-processCmd ListWallets = do
-  fs <- listDirectory walletsDirectory
+processCmd ListWallets config = do
+  fs <- listDirectory $ walletsDirectory config
   let kpfs = filter (\p -> and [ length p == pubKeyLengthInHex+3
                               , isSuffixOf ".kp" p]) fs
   mapM_ (\(idx, kpf) ->
@@ -86,14 +92,14 @@ processCmd ListWallets = do
        ) $ zip [0..] kpfs
 
 
-processCmd (PerformTransaction sender receiver amount) = do
+processCmd (PerformTransaction sender receiver amount) config = do
   msg <- runEitherT $ do
            liftIO $ logi "loading wallet..."
-           kp <- EitherT $ loadKeyPair sender
+           kp <- EitherT $ loadKeyPair sender config
            liftIO $ logs $ "loaded wallet" ++ show (keyPairPub kp)
            liftIO $ logi "gathering information from node..."
-           (WalletBalance outputRefs) <- EitherT $ resolveBalance sender
-           pureOutputs <- EitherT (resolveOutputs $ Set.toList outputRefs)
+           (WalletBalance outputRefs) <- EitherT $ resolveBalance sender config
+           pureOutputs <- EitherT (resolveOutputs (Set.toList outputRefs) config)
            let outputs = zip (Set.toList outputRefs) pureOutputs
            liftIO $ logs "got all needed information from node"
 
@@ -116,7 +122,7 @@ processCmd (PerformTransaction sender receiver amount) = do
 
            liftIO $ logi "pushing transaction to server..."
            manager <- liftIO $ newManager defaultManagerSettings
-           ireq <- liftIO $ parseRequest $ "http://" ++ backendAddress ++ "/transaction"
+           ireq <- liftIO $ parseRequest $ "http://" ++ backendAddress config ++ "/transaction"
            let req =  ireq {method = "POST"
                            , requestBody = RequestBodyLBS (encode tx)}
            res <- liftIO $ httpLbs req manager
@@ -129,9 +135,9 @@ processCmd (PerformTransaction sender receiver amount) = do
 
         
 
-processCmd ShowHead = do
+processCmd ShowHead config = do
   manager <- newManager defaultManagerSettings
-  req <- parseRequest $ "http://" ++ backendAddress ++ "/head"
+  req <- parseRequest $ "http://" ++ backendAddress config ++ "/head"
   res <- httpLbs req manager
   case decode $ responseBody res of
     Just (Head headLength headBlockId) -> do
@@ -139,9 +145,9 @@ processCmd ShowHead = do
         logs $ "head block id: " ++ show headBlockId
     Nothing -> loge "invalid format supplied" 
   
-processCmd (ShowBlock blockId) = do
+processCmd (ShowBlock blockId) config = do
   manager <- newManager defaultManagerSettings
-  req <- parseRequest $ "http://" ++ backendAddress ++ "/block?blockId=" ++ show blockId
+  req <- parseRequest $ "http://" ++ backendAddress config ++ "/block?blockId=" ++ show blockId
   res <- httpLbs req manager
   case decode $ responseBody res of
     Just blk@(RestBlock header transactions) -> do
@@ -151,9 +157,9 @@ processCmd (ShowBlock blockId) = do
         mapM_ (\tx -> putStrLn $  "  " ++ show tx) transactions
     Nothing -> loge "invalid format supplied" 
 
-processCmd (ShowTransaction txId) = do
+processCmd (ShowTransaction txId) config = do
   manager <- newManager defaultManagerSettings
-  req <- parseRequest $ "http://" ++ backendAddress ++ "/transaction?txId=" ++ show txId             
+  req <- parseRequest $ "http://" ++ backendAddress config ++ "/transaction?txId=" ++ show txId             
   res <- httpLbs req manager
   case decode $ responseBody res of
     Just tx@(Transaction _ _ _) -> do
@@ -165,13 +171,13 @@ processCmd (ShowTransaction txId) = do
     Nothing -> loge "invalid format supplied" 
 
 
-processCmd (QueryBalance walletId) = do
-  walletOpt <- resolveBalance walletId
+processCmd (QueryBalance walletId) config = do
+  walletOpt <- resolveBalance walletId config
   case walletOpt of
     Right (WalletBalance outputRefs) -> do
           logs $ "total outputs: " ++ show (Set.size outputRefs)
           logi $ "resolving outputs... "
-          outputsEthr <- resolveOutputs $ Set.toList outputRefs
+          outputsEthr <- resolveOutputs (Set.toList outputRefs) config
           case outputsEthr of
             Left err -> loge $ "failed to resolve outputs: "  ++ err
             Right outputs -> do
@@ -179,10 +185,10 @@ processCmd (QueryBalance walletId) = do
     Left err -> logw $ "failed to query balance: " ++ err
 
 
-resolveBalance :: WalletId -> IO (Either Error WalletBalance)
-resolveBalance walletId = do
+resolveBalance :: WalletId -> ClientConfig -> IO (Either Error WalletBalance)
+resolveBalance walletId config = do
   manager <- newManager defaultManagerSettings  
-  req <- parseRequest $ "http://" ++ backendAddress ++ "/balance?wallet=" ++ show walletId
+  req <- parseRequest $ "http://" ++ backendAddress config ++ "/balance?wallet=" ++ show walletId
   res <-  httpLbs req manager
   let body = responseBody res
   logi $ "received response with length: " ++ show (BSL.length body)
@@ -190,16 +196,16 @@ resolveBalance walletId = do
     Just (WalletBalance outputRefs) -> return $ Right $ WalletBalance outputRefs
     Nothing -> return $ Left "invalid format"
 
-resolveOutputs :: [TxOutputRef] -> IO (Either Error [TxOutput])
-resolveOutputs refs = do
-    outs <- mapConcurrently resolveOutput refs
+resolveOutputs :: [TxOutputRef] -> ClientConfig -> IO (Either Error [TxOutput])
+resolveOutputs refs config = do
+    outs <- mapConcurrently (\r -> resolveOutput r config) refs 
     return $ sequence outs
 
 
-resolveOutput :: TxOutputRef -> IO (Either Error TxOutput)
-resolveOutput (TxOutputRef txId outputIdx) = do
+resolveOutput :: TxOutputRef -> ClientConfig -> IO (Either Error TxOutput)
+resolveOutput (TxOutputRef txId outputIdx) config = do
   manager <- newManager defaultManagerSettings
-  req <- parseRequest $ "http://" ++ backendAddress ++ "/transaction?txId=" ++ show txId
+  req <- parseRequest $ "http://" ++ backendAddress config ++ "/transaction?txId=" ++ show txId
   res <- httpLbs req manager
   let body = responseBody res
 --  logi $ show body
@@ -213,7 +219,7 @@ resolveOutput (TxOutputRef txId outputIdx) = do
     Nothing -> do
       logw "incorrect response format"
       return $ Left "incorrect response format"
-              
+
 main = runInputT defaultSettings loop
        where
          loop :: InputT IO ()
@@ -226,7 +232,7 @@ main = runInputT defaultSettings loop
                  Left err -> do
                          liftIO $ loge $ "wrong input: " ++ show err
                  Right cmd -> do
-                         liftIO $ processCmd cmd
+                         liftIO $ processCmd cmd defaultClientConfig
            loop
                         
 
