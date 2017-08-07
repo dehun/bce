@@ -113,7 +113,27 @@ spec = do
                    unspent <- Db.unspentAt db (blockId topBlock)
                    keysUnspents <- concatMapM (\k -> Set.toList <$> fst <$> Db.getPubKeyBalance db (keyPairPub k))
                                    $ Set.toList (Set.insert initialBlockKeyPair $ dbFillerKeys filler)
-                   Set.fromList keysUnspents `shouldBe` unspent
+                   Set.fromList keysUnspents `shouldBe` unspent                                     
+           it "correctly consumes in memory transactions when built on largest head"
+                  $ \db -> property $ \filler arbKeyPair -> do
+                   (dbFillerRun filler) db
+                   (_, VerifiedBlock topBlock) <- Db.getLongestHead db
+                   unspent <- Db.unspentAt db (blockId topBlock)
+                   let keys = initialBlockKeyPair : (Set.toList $ dbFillerKeys filler)
+                   txsInMem <- generateArbitraryTxs db unspent keys
+                   let inputsInMem = Set.fromList $ concatMap (Set.toList . allTxInputs) txsInMem
+                   Right() <- VerifiedDb.verifyAndPushTransactions db $ Set.fromList txsInMem
+                   txsInBlock <- generateArbitraryTxs db unspent keys
+                   let inputsInBlock = Set.fromList $ concatMap (Set.toList . allTxInputs) txsInBlock
+                   let txsToBeConsumed = filter (\tx -> Set.empty /= Set.intersection inputsInBlock (allTxInputs tx)) txsInMem
+                   -- generate block
+                   Just target <- Db.getNextDifficulityTo db (blockId  topBlock)
+                   ctx <- Miner.coinbaseTransaction db (keyPairPub arbKeyPair) $ Set.fromList txsInBlock
+                   blk <- findOneBlock now (Set.insert ctx $ Set.fromList txsInBlock) target $ blockId topBlock
+                   VerifiedDb.verifyAndPushBlock db blk
+
+                   txsInMemAfter <- Db.getTransactions db
+                   txsInMemAfter `shouldBe` Set.difference (Set.fromList txsInMem) (Set.fromList txsToBeConsumed)
            it "correctly gets unconfirmed for key" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
                    (_, VerifiedBlock topBlock) <- Db.getLongestHead db
