@@ -16,6 +16,7 @@ import Test.QuickCheck
 import Test.QuickCheck.Arbitrary    
 import System.Directory
 import Control.Exception
+import Control.Monad.Extra    
 import Data.Maybe
 import Data.List    
 import qualified Data.Set as Set
@@ -104,6 +105,14 @@ spec = do
                    mapM_ (\u -> do
                            r <- Db.resolveInputOutput db (TxInput u)
                            r `shouldSatisfy` isJust) unspent
+           it "all keys balances = unspent" $ \db -> property $ \filler -> do
+                   (dbFillerRun filler) db
+                   (_, VerifiedBlock topBlock) <- Db.getLongestHead db
+                   unspent <- Db.unspentAt db (blockId topBlock)
+                   keysUnspents <- concatMapM (\k -> Set.toList <$> fst <$> Db.getPubKeyBalance db (keyPairPub k))
+                                   $ Set.toList (Set.insert initialBlockKeyPair $ dbFillerKeys filler)
+                   Set.fromList keysUnspents `shouldBe` unspent
+                   
            it "does not loose money" $ \db -> property $ \filler -> do
                    (dbFillerRun filler) db
                    (_, VerifiedBlock topBlock) <- Db.getLongestHead db
