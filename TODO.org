@@ -33,7 +33,7 @@
 ** DONE config for client 
 ** DONE client should not use outputs that are already in memory
 ** DONE config for daemon
-** TODO !BUG! - in memory list incorrect when racing heads
+** DONE !BUG! - in memory list incorrect when racing heads
           In case when we have in-memory-txs that are about to be consumed and we abandon longest head of size N and consume same outputs at another head with size < N then that in-memory-txs will never be consumed and miner will fail repeatedly
           Maybe correct behavior will be to have in-memory-txs per head and replicate them per head? Should we introduce prevention mechanism for repeated miner fail by simply killing whole in-memory-txs list?
 ** TODO testnet up and running - dehun
