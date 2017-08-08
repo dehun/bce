@@ -37,7 +37,7 @@ data P2pConfig = P2pConfig {
     , p2pConfigAnnounceTimeout :: Int
     , p2pConfigTimerTimeout :: Int
     , p2pConfigPeersConnectedLimit :: Int
-      } deriving (Show)
+      } deriving (Show, Eq)
 
 
 data PeerAddress = PeerAddress {

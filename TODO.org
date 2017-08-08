@@ -28,23 +28,23 @@
 ** DONE use network time in verification! security issue!
 ** DONE validate that public keys are valid
 ** DONE implement client/wallet
-** TODO unconfirmed 
-** TODO config for daemon
-** TODO config for client
-** TODO review in the memory consumption list
-** TODO limit fork depth
-** TODO debug transactions
-** TODO command line args parsing
+** DONE unconfirmed 
+** DONE debug transactions
+** DONE config for client 
+** DONE client should not use outputs that are already in memory
+** DONE config for daemon
+** TODO !!! testnet !!! - dehun
+** TODO command line args parsing - hal9000
+** TODO client non-interactive mode - hal9000
+** TODO select memory hard pow - hal9000
+** TODO review in the memory consumption list - hal9000
+** TODO limit fork depth - dehun
 ** TODO persistent storage for p2p peers
 ** TODO improve p2p again - 2 connections to same peer should not be possible
-** TODO select memory hard pow
-** TODO configuration (maybe just through command line?)
 ** TODO investigate possibility of hard fork due to imperfect p2p
 ** TODO rename blockHash to blockId and use blockId block instead of hash block
 ** TODO dead head pruning
 ** TODO set limit on amount of peers to store
 ** TODO fix hlint issues
-** TODO client should not use outputs that are already in memory
 ** TODO improve error handling in client (check status codes of http requests)
 ** TODO good help for client command line
-** TODO client non-interactive mode
