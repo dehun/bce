@@ -223,9 +223,8 @@ consumeInMemTransactions :: Db ->IO ()
 consumeInMemTransactions db = do
   oldTxs <- readIORef (dbTransactions db)
   (_, VerifiedBlock topBlock) <- getLongestHead db
-  let justConsumedInputs = Set.fromList $ concatMap (Set.toList . allTxInputs) $ blockTransactions topBlock
-  let intersects a b = Set.empty /= Set.intersection a b
-  let newTxs = Set.filter (\tx -> not (intersects justConsumedInputs $ allTxInputs tx)) oldTxs 
+  unspent <- unspentAt db (blockId topBlock)
+  let newTxs = Set.filter (\tx -> (Set.map inputOutputRef $ allTxInputs tx) `Set.isSubsetOf` unspent) oldTxs 
   writeIORef (dbTransactions db) newTxs
 
                        
