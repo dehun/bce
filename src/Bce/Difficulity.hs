@@ -13,7 +13,7 @@ type Difficulity = LeadingZeros
 type SecondsPerBlock = Double
 
 secondsPerBlock :: SecondsPerBlock
-secondsPerBlock = 10.0
+secondsPerBlock = 1.0
 
 defaultDifficulity :: Difficulity
 defaultDifficulity = 1
