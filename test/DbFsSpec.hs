@@ -162,21 +162,15 @@ spec = do
                    let totalCoins = sum (map outputAmount resolves)
                    totalCoins `shouldBe`
                               fromIntegral (Db.baseCoinbaseReward * (fromIntegral $ 1 + dbFillerNumBlocks filler))
-           it "loads properly" $ \db -> property $ \filler (DbPath arbDbPath) -> do
-                   pendingWith "do proper copy "
+           it "loads properly" $ \db -> property $ \filler -> do
+--                   pendingWith "do proper copy "
                    (dbFillerRun filler) db
                    (_, VerifiedBlock topBlock) <- Db.getLongestHead db
                    oldUnspent <- Set.toList <$> Db.unspentAt db (blockId topBlock)
-                   -- prepare new dir
-                   createDirectoryIfMissing False arbDbPath
-                   toCopy <- filter (\p -> or [ p == "transactions.db"
-                                              , p == "blocks.db"
-                                              , dropWhile (/='.') p == ".blk"]) <$> listDirectory (Db.dbDataDir db)
-                   mapM_ (\f -> copyFile ((Db.dbDataDir db) ++ "/" ++ f) ((arbDbPath ++ "/" ++ f))) toCopy
                    -- kill old one
-                   flushDb db
-                   
-                   newDb <- Db.initDb arbDbPath
+                   flushDb db                                 
+                   -- load new one
+                   newDb <- Db.initDb (Db.dbDataDir db)
                    Db.loadDb newDb
                    fst <$> (Db.getLongestHead newDb)  `shouldReturn` (1 + dbFillerNumBlocks filler)
                    (_, VerifiedBlock topBlock) <- Db.getLongestHead newDb

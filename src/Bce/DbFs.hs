@@ -122,6 +122,10 @@ initDb dataDir =  do
 
 unsafeCloseDb :: Db -> IO () -> IO ()
 unsafeCloseDb db fx = do
+  LevelDbInt.unsafeClose (dbTxIndex db)
+  LevelDbInt.unsafeClose (dbBlocksIndex db)              
+--  finalize 
+--  finalize (dbBlocksIndex db)
   addFinalizer db fx
 
 nextBlocks :: Db -> Hash -> IO (Set.Set Hash)
