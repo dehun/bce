@@ -94,13 +94,15 @@ data Db = Db {
     , dbHeads :: IORef (Set.Set ChainHead)
     , dbTransactions :: IORef (Set.Set Transaction)
     , dbUnspentCache :: Cache BlockId (Set.Set TxOutputRef)
+    , dbBlocksCache :: Cache BlockId (Maybe VerifiedBlock)
       }
 
 
 transactionally :: Db -> IO b -> IO b
 transactionally db fx = Lock.with (dbLock db) fx
 
-maxCachedUnspent = 100                        
+maxCachedUnspent = 1024
+maxBlocksCache = 512
 
 initDb :: Path -> IO Db
 initDb dataDir =  do
@@ -116,7 +118,7 @@ initDb dataDir =  do
   startHead <- ChainHead (blockHeader initialBlock) 1 (hash initialBlock) <$> now
   db <- Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
            <*> pure blocksIndexDb <*> newIORef (Set.singleton startHead) <*> newIORef Set.empty
-           <*> createCache maxCachedUnspent now
+           <*> createCache maxCachedUnspent now <*> createCache maxBlocksCache now
   pushDbTransaction db (head $ Set.toList $ blockTransactions initialBlock) initialBlock
   return db
 
@@ -163,9 +165,13 @@ blockPath dataDir blockHash = dataDir ++ "/" ++ show blockHash ++ ".blk"
 isBlockExists :: Db -> Hash -> IO Bool
 isBlockExists db blockId = isJust <$> loadBlockFromDisk db blockId
                   
-loadBlockFromDisk :: Db -> Hash -> IO (Maybe VerifiedBlock)
-loadBlockFromDisk db blockHash = Lock.with (dbLock db) $ 
-    Exception.catch (do
+loadBlockFromDisk :: Db -> BlockId -> IO (Maybe VerifiedBlock)
+loadBlockFromDisk db blockHash = Lock.with (dbLock db) $ do
+    cached <- queryCache (blockHash) $ dbBlocksCache db
+    case cached of
+      Just val -> return val
+      Nothing -> 
+          Exception.catch (do
                       content <- BS.readFile (dbBlockPath db blockHash)
                       return $ Just $ VerifiedBlock $ (BinGet.runGet Bin.get (BSL.fromStrict content))
                     ) (\e -> do
@@ -176,7 +182,7 @@ loadBlockFromDisk db blockHash = Lock.with (dbLock db) $
 
 
 pushBlockToDisk :: Db -> Block -> IO ()
-pushBlockToDisk db block = do
+pushBlockToDisk db block = Lock.with (dbLock db) $ do
     logDebug $  "pushing block to disk, blockid=" ++ show (blockId block)
     let content = BSL.toStrict $ BinPut.runPut $ Bin.put block            
     BS.writeFile (dbBlockPath db $ blockId block) content
@@ -186,6 +192,7 @@ pushBlockToDisk db block = do
                (BSL.toStrict $ BinPut.runPut $ Bin.put newNextBlocks)
     mapM_ (\tx -> pushDbTransaction db tx block) $ blockTransactions block
     logDebug $  "pushed block to disk, blockid=" ++ show (blockId block)
+    cacheValue (blockId block) (Just $ VerifiedBlock block) (dbBlocksCache db)
     v <- isBlockExists db (blockId block)
     if not v then error "block does not exist now!"
     else return()

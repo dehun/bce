@@ -38,7 +38,7 @@ defaultDaemonConfig = DaemonConfig {
 
 loadConfig :: IO (Either String DaemonConfig)
 loadConfig = do
-    [bindAddress, bindPort, seedAddress, seedPort, restApiPort, ownerKey] <- getArgs              
+    [bindAddress, bindPort, seedAddress, seedPort, restApiPort, ownerKey] <- take 6 <$> getArgs              
     return $ Right $ defaultDaemonConfig { seedAddresses=[P2p.PeerAddress seedAddress (read seedPort)]
                                          , restBindAddress=P2p.PeerAddress "0.0.0.0" (read restApiPort)
                                          , ownerKey=read ownerKey
