@@ -2,6 +2,9 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# OPTIONS_GHC -fno-cse #-}
+
 import Control.Monad
 import Data.Either    
 
@@ -39,13 +42,12 @@ import qualified Data.ByteString.Lazy as BSL
 import System.Console.Haskeline
 
 import System.Console.CmdArgs
-import System.Console.CmdArgs.Implicit
 
 
 data ClientConfig = ClientConfig {
       backendAddress :: String
     , walletsDirectory :: String
-    } deriving (Show)
+    } deriving (Show, Data, Typeable)
 
 
 logd msg = return () --putStrLn $ "[d]" ++ msg
@@ -221,8 +223,8 @@ resolveOutput (TxOutputRef txId outputIdx) config = do
       logw "incorrect response format"
       return $ Left "incorrect response format"
 
-clientConfig = ClientConfig {backendAddress = def &= help "backend Address" &= opt "127.0.0.1:8081",
-                             walletsDirectory = def &= help "wallets Directory" &= opt ".bcewallets/" }
+clientConfig = ClientConfig { backendAddress = "127.0.0.1:8081" &= help "backend Address",
+                              walletsDirectory = ".bcewallets/" &= help "wallets Directory" }
                             &= summary "Bce Cli v1"
 
 getConfig :: IO ClientConfig
