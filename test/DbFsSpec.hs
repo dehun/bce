@@ -168,7 +168,8 @@ spec = do
                    (_, VerifiedBlock topBlock) <- Db.getLongestHead db
                    oldUnspent <- Set.toList <$> Db.unspentAt db (blockId topBlock)
                    -- kill old one
-                   flushDb db                                 
+                   Db.unsafeCloseDb db (return ())
+--                   flushDb db                                 
                    -- load new one
                    newDb <- Db.initDb (Db.dbDataDir db)
                    Db.loadDb newDb
@@ -176,4 +177,5 @@ spec = do
                    (_, VerifiedBlock topBlock) <- Db.getLongestHead newDb
                    newUnspent <- Set.toList <$> Db.unspentAt newDb (blockId topBlock)                       
                    oldUnspent `shouldBe` newUnspent
+                   flushDb db
                    flushDb newDb

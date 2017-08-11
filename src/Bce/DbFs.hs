@@ -90,6 +90,7 @@ data Db = Db {
       dbLock :: Lock.RLock
     , dbDataDir :: Path
     , dbTxIndex :: LevelDb.DB
+    , dbBlocks :: LevelDb.DB
     , dbBlocksIndex :: LevelDb.DB
     , dbHeads :: IORef (Set.Set ChainHead)
     , dbTransactions :: IORef (Set.Set Transaction)
@@ -105,16 +106,20 @@ maxCachedUnspent = 100
 initDb :: Path -> IO Db
 initDb dataDir =  do
   createDirectoryIfMissing False dataDir
+  blocksDb <- LevelDb.open (dataDir ++ "/blocks.db")
+             (LevelDb.defaultOptions { LevelDb.createIfMissing = True })
   transactionsIndexDb <- LevelDb.open (dataDir ++ "/transactions.db")
              (LevelDb.defaultOptions { LevelDb.createIfMissing = True })
-  blocksIndexDb <- LevelDb.open (dataDir ++ "/blocks.db")
+  blocksIndexDb <- LevelDb.open (dataDir ++ "/blocksIndex.db")
                   (LevelDb.defaultOptions { LevelDb.createIfMissing = True })
   -- initial block hack
-  withBinaryFile (blockPath dataDir $ hash initialBlock) WriteMode
-                   $ (\h -> BSL.hPut h (BinPut.runPut $ Bin.put initialBlock))
+  let initialContent = BSL.toStrict (BinPut.runPut $ Bin.put initialBlock)
+  LevelDb.put blocksDb def (hashBs $ blockId initialBlock) initialContent
+  -- withBinaryFile (blockPath dataDir $ hash initialBlock) WriteMode
+  --                  $ (\h -> BSL.hPut h (BinPut.runPut $ Bin.put initialBlock))
   -- 
   startHead <- ChainHead (blockHeader initialBlock) 1 (hash initialBlock) <$> now
-  db <- Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
+  db <- Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb <*> pure blocksDb
            <*> pure blocksIndexDb <*> newIORef (Set.singleton startHead) <*> newIORef Set.empty
            <*> createCache maxCachedUnspent now
   pushDbTransaction db (head $ Set.toList $ blockTransactions initialBlock) initialBlock
@@ -123,7 +128,8 @@ initDb dataDir =  do
 unsafeCloseDb :: Db -> IO () -> IO ()
 unsafeCloseDb db fx = do
   LevelDbInt.unsafeClose (dbTxIndex db)
-  LevelDbInt.unsafeClose (dbBlocksIndex db)              
+  LevelDbInt.unsafeClose (dbBlocksIndex db)
+  LevelDbInt.unsafeClose (dbBlocks db)
 --  finalize 
 --  finalize (dbBlocksIndex db)
   addFinalizer db fx
@@ -166,7 +172,8 @@ isBlockExists db blockId = isJust <$> loadBlockFromDisk db blockId
 loadBlockFromDisk :: Db -> Hash -> IO (Maybe VerifiedBlock)
 loadBlockFromDisk db blockHash = Lock.with (dbLock db) $ 
     Exception.catch (do
-                      content <- BS.readFile (dbBlockPath db blockHash)
+                      Just content <- LevelDb.get (dbBlocks db) def (hashBs blockHash) 
+                      --content <- BS.readFile (dbBlockPath db blockHash)
                       return $ Just $ VerifiedBlock $ (BinGet.runGet Bin.get (BSL.fromStrict content))
                     ) (\e -> do
                          let err = show (e :: Exception.SomeException)
@@ -178,8 +185,9 @@ loadBlockFromDisk db blockHash = Lock.with (dbLock db) $
 pushBlockToDisk :: Db -> Block -> IO ()
 pushBlockToDisk db block = do
     logDebug $  "pushing block to disk, blockid=" ++ show (blockId block)
-    let content = BSL.toStrict $ BinPut.runPut $ Bin.put block            
-    BS.writeFile (dbBlockPath db $ blockId block) content
+    let content = BSL.toStrict $ BinPut.runPut $ Bin.put block
+    LevelDb.put (dbBlocks db) def (hashBs $ blockId block) content
+--    BS.writeFile (dbBlockPath db $ blockId block) content
     let prevBlockHash = bhPrevBlockHeaderHash $ blockHeader $ block
     newNextBlocks <- Set.insert (hash block) <$> nextBlocks db prevBlockHash
     LevelDb.put (dbBlocksIndex db) def (hashBs prevBlockHash)
