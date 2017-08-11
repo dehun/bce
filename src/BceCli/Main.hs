@@ -2,6 +2,9 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# OPTIONS_GHC -fno-cse #-}
+
 import Control.Monad
 import Data.Either    
 
@@ -38,13 +41,13 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import System.Console.Haskeline
 
+import System.Console.CmdArgs
+
 
 data ClientConfig = ClientConfig {
       backendAddress :: String
     , walletsDirectory :: String
-    } deriving (Show)
-
-defaultClientConfig = ClientConfig {backendAddress = "127.0.0.1:8081", walletsDirectory = ".bcewallets/" }    
+    } deriving (Show, Data, Typeable)
 
 
 logd msg = return () --putStrLn $ "[d]" ++ msg
@@ -222,7 +225,14 @@ resolveOutput (TxOutputRef txId outputIdx) config = do
       logw "incorrect response format"
       return $ Left "incorrect response format"
 
-main = runInputT defaultSettings loop
+clientConfig = ClientConfig { backendAddress = "127.0.0.1:8081" &= help "backend Address",
+                              walletsDirectory = ".bcewallets/" &= help "wallets Directory" }
+                            &= summary "Bce Cli v1"
+
+getConfig :: IO ClientConfig
+getConfig = cmdArgs clientConfig
+
+repl cfg = runInputT defaultSettings loop
        where
          loop :: InputT IO ()
          loop  = do
@@ -234,5 +244,8 @@ main = runInputT defaultSettings loop
                  Left err -> do
                          liftIO $ loge $ "wrong input: " ++ show err
                  Right cmd -> do
-                         liftIO $ processCmd cmd defaultClientConfig
+                         liftIO $ processCmd cmd cfg
            loop
+
+
+main = repl =<< getConfig
