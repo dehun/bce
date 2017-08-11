@@ -36,18 +36,19 @@
 ** DONE !BUG! - in memory list incorrect when racing heads
           In case when we have in-memory-txs that are about to be consumed and we abandon longest head of size N and consume same outputs at another head with size < N then that in-memory-txs will never be consumed and miner will fail repeatedly
           Maybe correct behavior will be to have in-memory-txs per head and replicate them per head? Should we introduce prevention mechanism for repeated miner fail by simply killing whole in-memory-txs list?
+** TODO persistent storage for p2p peers
+** TODO investigate performance (DbFs) - dehun
+** TODO limit fork depth - dehun
 ** TODO testnet up and running - dehun
 ** TODO end2end test on testnet- dehun
 ** TODO automatic end2end test on testnet - dehun
 ** TODO limit on block size (amount of txs {outputs, inputs})
 ** TODO add more tests for verification
-** TODO investigate travis fails
 ** TODO command line args parsing - hal9000
 ** TODO client non-interactive mode - hal9000
-** TODO select memory hard pow - hal9000
+** TODO memory hard pow - hal9000
+** TODO investigate travis fails
 ** TODO review in the memory consumption list - hal9000
-** TODO limit fork depth - dehun
-** TODO persistent storage for p2p peers
 ** TODO improve p2p again - 2 connections to same peer should not be possible
 ** TODO investigate possibility of hard fork due to imperfect p2p
 ** TODO rename blockHash to blockId and use blockId block instead of hash block
@@ -58,4 +59,6 @@
 ** TODO good help for client command line
 ** TODO investigate compression for node-node communications
 ** TODO optimize transactions propagation
+** TODO REST - show state of p2p on node
 ** TODO longevity test
+** TODO BUG wallet list does not create wallets directory

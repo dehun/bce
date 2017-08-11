@@ -47,6 +47,7 @@ import System.Console.CmdArgs
 data ClientConfig = ClientConfig {
       backendAddress :: String
     , walletsDirectory :: String
+    , nonInteractive :: Bool
     } deriving (Show, Data, Typeable)
 
 
