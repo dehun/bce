@@ -69,6 +69,7 @@ import qualified Data.Map as Map
 import qualified Control.Concurrent.RLock as Lock
 import qualified Database.LevelDB.Base as LevelDb
 import qualified Database.LevelDB.Internal as LevelDbInt
+import qualified Database.LevelDB.Iterator as LevelDbIter
 import qualified Data.Binary as Bin
 import qualified Data.Binary.Get as BinGet
 import qualified Data.Binary.Put as BinPut
@@ -93,6 +94,7 @@ data Db = Db {
       dbLock :: Lock.RLock
     , dbDataDir :: Path
     , dbTxIndex :: LevelDb.DB
+    , dbSeeds :: LevelDb.DB
     , dbBlocks :: LevelDb.DB
     , dbBlocksIndex :: LevelDb.DB
     , dbHeads :: IORef (Set.Set ChainHead)
@@ -113,6 +115,8 @@ initDb dataDir =  do
              (LevelDb.defaultOptions { LevelDb.createIfMissing = True
                                      , LevelDb.blockSize = 25 * 1024*1024
                                      , LevelDb.cacheSize = 256 * 1024*1024})
+  seedsDb <- LevelDb.open (dataDir ++ "/seeds.db")
+             (LevelDb.defaultOptions { LevelDb.createIfMissing = True })             
   transactionsIndexDb <- LevelDb.open (dataDir ++ "/transactions.db")
              (LevelDb.defaultOptions { LevelDb.createIfMissing = True })
   blocksIndexDb <- LevelDb.open (dataDir ++ "/blocksIndex.db")
@@ -124,7 +128,8 @@ initDb dataDir =  do
   --                  $ (\h -> BSL.hPut h (BinPut.runPut $ Bin.put initialBlock))
   -- 
   startHead <- ChainHead (blockHeader initialBlock) 1 (hash initialBlock) <$> now
-  db <- Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb <*> pure blocksDb
+  db <- Db <$> Lock.new <*> pure dataDir <*> pure transactionsIndexDb
+           <*> pure seedsDb <*> pure blocksDb
            <*> pure blocksIndexDb <*> newIORef (Set.singleton startHead) <*> newIORef Set.empty
            <*> createCache maxCachedUnspent now
   pushDbTransaction db (head $ Set.toList $ blockTransactions initialBlock) initialBlock
@@ -135,6 +140,7 @@ unsafeCloseDb db fx = do
   LevelDbInt.unsafeClose (dbTxIndex db)
   LevelDbInt.unsafeClose (dbBlocksIndex db)
   LevelDbInt.unsafeClose (dbBlocks db)
+  LevelDbInt.unsafeClose (dbSeeds db)            
 --  finalize 
 --  finalize (dbBlocksIndex db)
   addFinalizer db fx
@@ -469,8 +475,29 @@ pruneHead db deadHead = return () -- TODO: implement me
 
 
 -- push seed                        
-pushSeed :: PeerAddress -> IO ()
-pushSeed peer = undefined
+pushSeed :: Db -> PeerAddress -> IO ()
+pushSeed db peer = do
+  let seedBs = BSL.toStrict (BinPut.runPut $ Bin.put peer)
+  LevelDb.put (dbSeeds db) def (seedBs) BS.empty
+    
 
-getSeeds :: IO (Set.Set PeerAddress)
-getSeeds = undefined
+getSeeds :: Db -> IO (Set.Set PeerAddress)
+getSeeds db = do
+  iter <- LevelDbIter.createIter (dbSeeds db) def
+  LevelDbIter.iterFirst iter
+  let loop = do
+             v <- LevelDbIter.iterValid iter
+             case v of
+               True -> do
+                      kbsOpt <- LevelDbIter.iterKey iter
+                      LevelDbIter.iterNext iter                                
+                      case kbsOpt of
+                        Just kbs ->  do
+                            let k = (BinGet.runGet Bin.get (BSL.fromStrict kbs))
+                            (:) k <$> loop
+                        Nothing -> loop
+
+               False -> return []
+  r <- Set.fromList <$> loop
+  LevelDbIter.releaseIter iter
+  return r

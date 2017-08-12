@@ -133,7 +133,7 @@ networkListener net = do
             msg <- liftIO $ atomically $ readTChan chan
             case msg of
               P2p.PeerConnected peer -> do
-                  liftIO $ Db.pushSeed peer
+                  liftIO $ Db.pushSeed (networkStateDb net) peer
               P2p.PeerDisconnected peer -> do
                   liftIO $ logDebug $ "peer disconnected " ++ show peer
                   modify (\oldState -> oldState{networkListenerActiveSyncs=
@@ -160,13 +160,16 @@ transactionsAnnouncer net = do
   transactionsAnnouncer net
               
 
-start :: P2p.P2pConfig -> [PeerAddress] -> Db.Db -> IO Network 
+-- TODO: [PeerAddress] -> Set.Set PeerAddress
+start :: P2p.P2pConfig -> [PeerAddress] -> Db.Db -> IO Network
 start p2pConfig seeds db  = do
-    networkState <- NetworkState <$> (P2p.start seeds p2pConfig) <*> pure db
-    networkListenerThread <- forkIO $ networkListener networkState
-    braggerThread <- forkIO $ bragger networkState
-    transactionAnnouncherThread <- forkIO $ transactionsAnnouncer networkState
-    return Network{..}
+  dbSeeds <- Db.getSeeds db
+  let allSeeds = Set.toList $ Set.union dbSeeds $ Set.fromList seeds
+  networkState <- NetworkState <$> (P2p.start seeds p2pConfig) <*> pure db
+  networkListenerThread <- forkIO $ networkListener networkState
+  braggerThread <- forkIO $ bragger networkState
+  transactionAnnouncherThread <- forkIO $ transactionsAnnouncer networkState
+  return Network{..}
 
 stop :: Network -> IO ()
 stop net = do

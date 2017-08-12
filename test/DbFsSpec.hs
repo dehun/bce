@@ -26,10 +26,14 @@ import qualified Data.ByteString as BS
 import Data.ByteString.Arbitrary
 import Control.Monad
 import System.Random
+import Bce.PeerAddress    
 import ArbitraryDb    
     
 
 unexistingBlockId = hash "does not exist"
+
+instance Arbitrary PeerAddress where
+    arbitrary = PeerAddress <$> arbitrary <*> arbitrary
 
 
 spec :: Spec
@@ -179,3 +183,6 @@ spec = do
                    oldUnspent `shouldBe` newUnspent
                    flushDb db
                    flushDb newDb
+           it "saves seed peers properly"$ \db -> property $ \peers-> do
+                   mapM_ (Db.pushSeed db) peers
+                   Db.getSeeds db `shouldReturn` peers
