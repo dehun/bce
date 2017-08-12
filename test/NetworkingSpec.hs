@@ -8,7 +8,8 @@ import Bce.Crypto
 import Bce.Verified
 import Bce.BlockChainHash
 import Bce.BlockChain    
-import Bce.Util    
+import Bce.Util
+import Bce.PeerAddress
 
 import Test.Hspec    
 import Test.QuickCheck    
@@ -38,7 +39,7 @@ instance Arbitrary WithArbitraryNetworks where
         portRangeEnd <- choose (46000, 56000)
         freePorts <- mapM (\_ -> choose (portRangeStart, portRangeEnd) :: Gen Int) networkIds
         let ports = zip networkIds freePorts
-        let nidToPeerAddress nid = P2p.PeerAddress ("(127,0,0," ++ show (10+nid) ++ ")")
+        let nidToPeerAddress nid = PeerAddress ("(127,0,0," ++ show (10+nid) ++ ")")
                                                    (fromIntegral $ fromJust $ lookup nid ports)
         -- minimal spanning tree for fully connected graph is shuffled list of vertexes paired
         shuffled <-  shuffle networkIds

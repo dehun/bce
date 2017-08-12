@@ -30,10 +30,10 @@ import Debug.Trace
 import Control.Concurrent    
 import Control.Concurrent.STM
 import Control.Monad.Trans
-import Control.Monad.Trans.State        
+import Control.Monad.Trans.State
+import Bce.PeerAddress
 
 
-type PeerAddress = P2p.PeerAddress    
 
 data NetworkState = NetworkState { networkP2p :: P2p.P2p
                                  , networkStateDb :: Db.Db }
@@ -132,6 +132,8 @@ networkListener net = do
       let loop = do
             msg <- liftIO $ atomically $ readTChan chan
             case msg of
+              P2p.PeerConnected peer -> do
+                  liftIO $ Db.pushSeed peer
               P2p.PeerDisconnected peer -> do
                   liftIO $ logDebug $ "peer disconnected " ++ show peer
                   modify (\oldState -> oldState{networkListenerActiveSyncs=
@@ -158,7 +160,7 @@ transactionsAnnouncer net = do
   transactionsAnnouncer net
               
 
-start :: P2p.P2pConfig -> [P2p.PeerAddress] -> Db.Db -> IO Network 
+start :: P2p.P2pConfig -> [PeerAddress] -> Db.Db -> IO Network 
 start p2pConfig seeds db  = do
     networkState <- NetworkState <$> (P2p.start seeds p2pConfig) <*> pure db
     networkListenerThread <- forkIO $ networkListener networkState

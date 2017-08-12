@@ -69,6 +69,7 @@ library
                    , Bce.Logger
                    , Bce.Cache
                    , Bce.RestTypes
+                   , Bce.PeerAddress
 
 
     default-language:    Haskell2010    

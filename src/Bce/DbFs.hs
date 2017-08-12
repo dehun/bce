@@ -25,6 +25,8 @@ module Bce.DbFs
     , isBlockExists
     , transactionally
     , baseCoinbaseReward
+    , pushSeed
+    , getSeeds
     )
         where
 
@@ -39,7 +41,8 @@ import Bce.Difficulity
 import Bce.Util
 import Bce.Logger
 import Bce.Crypto
-import Bce.Cache    
+import Bce.Cache
+import Bce.PeerAddress
 
 import Debug.Trace
 import GHC.Generics (Generic)
@@ -107,7 +110,9 @@ initDb :: Path -> IO Db
 initDb dataDir =  do
   createDirectoryIfMissing False dataDir
   blocksDb <- LevelDb.open (dataDir ++ "/blocks.db")
-             (LevelDb.defaultOptions { LevelDb.createIfMissing = True })
+             (LevelDb.defaultOptions { LevelDb.createIfMissing = True
+                                     , LevelDb.blockSize = 25 * 1024*1024
+                                     , LevelDb.cacheSize = 256 * 1024*1024})
   transactionsIndexDb <- LevelDb.open (dataDir ++ "/transactions.db")
              (LevelDb.defaultOptions { LevelDb.createIfMissing = True })
   blocksIndexDb <- LevelDb.open (dataDir ++ "/blocksIndex.db")
@@ -461,3 +466,11 @@ prune db = Lock.with (dbLock db) $ do
 
 pruneHead :: Db -> ChainHead -> IO ()
 pruneHead db deadHead = return () -- TODO: implement me
+
+
+-- push seed                        
+pushSeed :: PeerAddress -> IO ()
+pushSeed peer = undefined
+
+getSeeds :: IO (Set.Set PeerAddress)
+getSeeds = undefined

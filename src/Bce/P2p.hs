@@ -28,7 +28,8 @@ import qualified Data.Binary.Get as BinGet
 import qualified Data.Binary.Put as BinPut    
 import qualified Data.Set as Set
 import qualified Data.Map as Map    
-import qualified Control.Exception as Exception    
+import qualified Control.Exception as Exception
+import Bce.PeerAddress    
 
 
 data P2pConfig = P2pConfig {
@@ -39,12 +40,6 @@ data P2pConfig = P2pConfig {
     , p2pConfigPeersConnectedLimit :: Int
       } deriving (Show, Eq)
 
-
-data PeerAddress = PeerAddress {
-      peerIp :: String
-    , peerPort :: Int32
-      } deriving (Show, Eq, Generic, Ord)
-instance Binary PeerAddress
 
 data P2pState = P2pState {
       p2pConfig :: P2pConfig
@@ -88,6 +83,7 @@ clientStateUpdatePeer newPeer p2pState  =
 
 
 data PeerEvent = PeerDisconnected PeerAddress
+                 | PeerConnected PeerAddress
                  | PeerMessage PeerAddress BS.ByteString  deriving (Show, Eq)
 
 data PeerSend = PeerSend { sendMsg :: P2pMessage, sendDestination :: Maybe PeerAddress } deriving (Show, Eq)
@@ -148,6 +144,8 @@ handlePeerMessage sock p2p msg = do
                               oldThreads <- readTVar (p2pPeerThreads p2p)
                               let newThreads = Map.insert peer [thisThread, sendThread] oldThreads
                               writeTVar (p2pPeerThreads p2p) newThreads
+                      liftIO $ atomically $ do
+                                   writeTChan (p2psRecvChan p2p) (PeerConnected peer)
                       return ()
     P2pMessageAnounce peers -> do
              liftIO $ logTrace $ "new peers " ++ show peers
@@ -157,12 +155,12 @@ handlePeerMessage sock p2p msg = do
                                  return ()
     P2pMessagePayload userMsg -> do
              -- TODO: check do we have bloody peer
-             peer <- fromJust <$> clientStatePeer <$> State.get
+             Just peer <- clientStatePeer <$> State.get
              liftIO $ atomically $ writeTChan (p2psRecvChan p2p)
                                  (PeerMessage peer userMsg)
 
     P2pMessageTellTime time -> do
-      peer <- fromJust <$> clientStatePeer <$> State.get      
+      peer <- fromJust <$> clientStatePeer <$> State.get
       liftIO $ atomically $ do
         oldTimes <- readTVar $ p2pPeerTimes p2p
         let newTimes = Map.insert peer time oldTimes
