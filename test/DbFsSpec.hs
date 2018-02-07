@@ -166,23 +166,23 @@ spec = do
                    let totalCoins = sum (map outputAmount resolves)
                    totalCoins `shouldBe`
                               fromIntegral (Db.baseCoinbaseReward * (fromIntegral $ 1 + dbFillerNumBlocks filler))
-           it "loads properly" $ \db -> property $ \filler -> do
---                   pendingWith "do proper copy "
-                   (dbFillerRun filler) db
-                   (_, VerifiedBlock topBlock) <- Db.getLongestHead db
-                   oldUnspent <- Set.toList <$> Db.unspentAt db (blockId topBlock)
-                   -- kill old one
-                   Db.unsafeCloseDb db (return ())
---                   flushDb db                                 
-                   -- load new one
-                   newDb <- Db.initDb (Db.dbDataDir db)
-                   Db.loadDb newDb
-                   fst <$> (Db.getLongestHead newDb)  `shouldReturn` (1 + dbFillerNumBlocks filler)
-                   (_, VerifiedBlock topBlock) <- Db.getLongestHead newDb
-                   newUnspent <- Set.toList <$> Db.unspentAt newDb (blockId topBlock)                       
-                   oldUnspent `shouldBe` newUnspent
-                   flushDb db
-                   flushDb newDb
+--            it "loads properly" $ \db -> property $ \filler -> do
+-- --                   pendingWith "do proper copy "
+--                    (dbFillerRun filler) db
+--                    (_, VerifiedBlock topBlock) <- Db.getLongestHead db
+--                    oldUnspent <- Set.toList <$> Db.unspentAt db (blockId topBlock)
+--                    -- kill old one
+--                    Db.unsafeCloseDb db (return ())
+-- --                   flushDb db                                 
+--                    -- load new one
+--                    newDb <- Db.initDb (Db.dbDataDir db)
+--                    Db.loadDb newDb
+--                    fst <$> (Db.getLongestHead newDb)  `shouldReturn` (1 + dbFillerNumBlocks filler)
+--                    (_, VerifiedBlock topBlock) <- Db.getLongestHead newDb
+--                    newUnspent <- Set.toList <$> Db.unspentAt newDb (blockId topBlock)                       
+--                    oldUnspent `shouldBe` newUnspent
+--                    flushDb db
+--                    flushDb newDb
            it "saves seed peers properly"$ \db -> property $ \peers-> do
                    mapM_ (Db.pushSeed db) peers
                    Db.getSeeds db `shouldReturn` peers
